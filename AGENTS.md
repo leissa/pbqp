@@ -14,7 +14,7 @@ ctest --preset debug
 
 | Task | Command |
 | ---- | ------- |
-| Build | `cmake --build --preset debug` (also `release`, `asan`) |
+| Build | `cmake --build --preset debug` (also `release`, `asan`, `tsan`) |
 | Tests | `ctest --preset debug --output-on-failure` |
 | One test binary | `./build/debug/pbqp_tests` |
 | Demo | `./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40` |
@@ -27,8 +27,9 @@ Warnings are on (`-Wall -Wextra -Wpedantic -Wconversion -Wshadow`) and the build
 - `include/pbqp/` public headers; `src/pbqp/` implementations, mirroring the include tree.
 - `apps/` demo CLI, `tests/` dependency-free CTest binary.
 - `submodules/svector` is a public dependency (`ankerl::svector`) exported by `pbqp::pbqp`.
-- `Graph` stores cost vectors/matrices with stable ids and at most one edge per node pair.
+- `Graph` stores cost vectors/matrices with stable ids and at most one edge per node pair; `Cost` is `std::int16_t` with saturating sums, `CostSum` totals are `std::int64_t`.
 - `solve` applies RI/RII exactly and RN heuristically, then back-substitutes in reverse reduction order; `solve_exhaustive` is the reference for tiny instances.
+- RI/RII kernels use saturating `int16` SIMD with runtime AVX-512BW/AVX2 dispatch on x86, NEON on ARM, and a scalar fallback.
 
 ## Comments
 

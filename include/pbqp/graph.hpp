@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include <initializer_list>
 #include <optional>
@@ -12,14 +13,18 @@
 namespace pbqp {
 
 /// Identifier of a node in a Graph. Ids are stable for the lifetime of the graph.
-using NodeId = std::size_t;
+using NodeId = size_t;
 /// Identifier of an edge in a Graph.
-using EdgeId = std::size_t;
+using EdgeId = size_t;
 /// Index of an option within a node's cost vector.
-using OptionIndex = std::size_t;
+using OptionIndex = size_t;
+
+/// Compiler PBQP costs are small integers; sums saturate and totals use CostSum.
+using Cost    = std::int16_t;
+using CostSum = std::int64_t;
 
 /// PBQP vectors and matrices are small, so they live inline.
-using Costs     = ankerl::svector<double, 4>;
+using Costs     = ankerl::svector<Cost, 4>;
 using Adjacency = ankerl::svector<EdgeId, 4>;
 /// One option per live node, indexed by node id.
 using Choices = ankerl::svector<OptionIndex, 8>;
@@ -29,7 +34,7 @@ using Choices = ankerl::svector<OptionIndex, 8>;
 /// Every node carries a cost vector with one entry per option. Every edge
 /// carries a cost matrix indexed by the options of its endpoints:
 ///
-///     costs[source_option * option_count(target) + target_option]
+///     costs[src_option * option_count(dst) + dst_option]
 ///
 /// The total cost of an assignment `x` is
 ///
@@ -48,44 +53,44 @@ public:
     };
 
     struct Edge {
-        NodeId source = 0;
-        NodeId target = 0;
-        Costs costs; // row-major, source option is the row
+        NodeId src = 0;
+        NodeId dst = 0;
+        Costs costs; // row-major, src option is the row
         bool alive = true;
     };
 
     /// Add a node with the given cost vector. The vector must not be empty.
-    auto add_node(std::span<const double> costs) -> NodeId;
-    auto add_node(std::initializer_list<double> costs) -> NodeId {
-        return add_node(std::span<const double>{costs.begin(), costs.size()});
+    NodeId add_node(std::span<const Cost> costs);
+    NodeId add_node(std::initializer_list<Cost> costs) {
+        return add_node(std::span<const Cost>{costs.begin(), costs.size()});
     }
 
-    /// Add an edge between `u` and `v`. `costs` must hold exactly
+    /// Link `u` and `v`. `costs` must hold exactly
     /// option_count(u) * option_count(v) entries, row-major with `u` as the
     /// row index. Self edges and duplicate edges are rejected.
-    auto add_edge(NodeId u, NodeId v, std::span<const double> costs) -> EdgeId;
-    auto add_edge(NodeId u, NodeId v, std::initializer_list<double> costs) -> EdgeId {
-        return add_edge(u, v, std::span<const double>{costs.begin(), costs.size()});
+    EdgeId link(NodeId u, NodeId v, std::span<const Cost> costs);
+    EdgeId link(NodeId u, NodeId v, std::initializer_list<Cost> costs) {
+        return link(u, v, std::span<const Cost>{costs.begin(), costs.size()});
     }
 
     void remove_edge(EdgeId e);
     void remove_node(NodeId v);
 
-    [[nodiscard]] auto has_node(NodeId v) const -> bool;
-    [[nodiscard]] auto has_edge(EdgeId e) const -> bool;
+    [[nodiscard]] bool has_node(NodeId v) const;
+    [[nodiscard]] bool has_edge(EdgeId e) const;
 
-    [[nodiscard]] auto node(NodeId v) -> Node&;
-    [[nodiscard]] auto node(NodeId v) const -> const Node&;
-    [[nodiscard]] auto edge(EdgeId e) -> Edge&;
-    [[nodiscard]] auto edge(EdgeId e) const -> const Edge&;
+    [[nodiscard]] Node& node(NodeId v);
+    [[nodiscard]] const Node& node(NodeId v) const;
+    [[nodiscard]] Edge& edge(EdgeId e);
+    [[nodiscard]] const Edge& edge(EdgeId e) const;
 
-    [[nodiscard]] auto option_count(NodeId v) const -> std::size_t { return node(v).costs.size(); }
+    [[nodiscard]] size_t option_count(NodeId v) const { return node(v).costs.size(); }
 
-    /// Matrix entry of `e`, addressed as (source option, target option).
-    [[nodiscard]] auto edge_cost(EdgeId e, OptionIndex source_option, OptionIndex target_option) const -> double;
+    /// Matrix entry of `e`, addressed as (src option, dst option).
+    [[nodiscard]] Cost edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) const;
 
     /// The edge between `u` and `v`, if one exists.
-    [[nodiscard]] auto find_edge(NodeId u, NodeId v) const -> std::optional<EdgeId>;
+    [[nodiscard]] std::optional<EdgeId> find_edge(NodeId u, NodeId v) const;
 
     /// Views over the ids of live nodes and edges. The graph must outlive them.
     [[nodiscard]] auto nodes() const {
@@ -97,16 +102,14 @@ public:
              | std::views::filter([this](EdgeId e) { return has_edge(e); });
     }
 
-    [[nodiscard]] auto node_count() const -> std::size_t {
-        return static_cast<std::size_t>(std::ranges::distance(nodes()));
-    }
-    [[nodiscard]] auto edge_count() const -> std::size_t {
-        return static_cast<std::size_t>(std::ranges::distance(edges()));
-    }
+    [[nodiscard]] size_t node_count() const { return live_nodes_; }
+    [[nodiscard]] size_t edge_count() const { return live_edges_; }
 
 private:
     ankerl::svector<Node, 2> nodes_;
     ankerl::svector<Edge, 2> edges_;
+    size_t live_nodes_ = 0;
+    size_t live_edges_ = 0;
 };
 
 } // namespace pbqp

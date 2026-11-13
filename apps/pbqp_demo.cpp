@@ -19,10 +19,10 @@
 namespace {
 
 struct Settings {
-    std::size_t nodes   = 12;
-    std::size_t options = 4;
-    std::size_t edges   = 24;
-    std::uint64_t seed  = 42;
+    size_t nodes       = 12;
+    size_t options     = 4;
+    size_t edges       = 24;
+    std::uint64_t seed = 42;
 };
 
 void print_usage(std::string_view program) {
@@ -31,12 +31,12 @@ void print_usage(std::string_view program) {
               << "  compares the heuristic result against brute force\n";
 }
 
-auto parse(int argc, char** argv) -> Settings {
+Settings parse(int argc, char** argv) {
     Settings settings;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
-        const auto next                 = [&](std::string_view name) -> std::string {
+        const auto next                 = [&](std::string_view name) {
             if (i + 1 >= argc) throw std::invalid_argument(std::format("missing value for {}", name));
             return argv[++i];
         };
@@ -62,14 +62,14 @@ auto parse(int argc, char** argv) -> Settings {
     return settings;
 }
 
-auto random_instance(const Settings& settings) -> pbqp::Graph {
+pbqp::Graph random_instance(const Settings& settings) {
     std::mt19937_64 random{settings.seed};
-    std::uniform_real_distribution<double> cost{0.0, 10.0};
+    std::uniform_int_distribution<int> cost{0, 10};
 
     pbqp::Graph graph;
-    ankerl::svector<double, 4> node_costs(settings.options);
-    for (std::size_t i = 0; i < settings.nodes; ++i) {
-        std::ranges::generate(node_costs, [&] { return cost(random); });
+    ankerl::svector<pbqp::Cost, 4> node_costs(settings.options);
+    for (size_t i = 0; i < settings.nodes; ++i) {
+        std::ranges::generate(node_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
         graph.add_node(node_costs);
     }
 
@@ -80,17 +80,17 @@ auto random_instance(const Settings& settings) -> pbqp::Graph {
             pairs.emplace_back(u, v);
     std::ranges::shuffle(pairs, random);
 
-    ankerl::svector<double, 4> edge_costs(settings.options * settings.options);
-    for (std::size_t i = 0; i < std::min(settings.edges, pairs.size()); ++i) {
-        std::ranges::generate(edge_costs, [&] { return cost(random); });
-        graph.add_edge(pairs[i].first, pairs[i].second, edge_costs);
+    ankerl::svector<pbqp::Cost, 4> edge_costs(settings.options * settings.options);
+    for (size_t i = 0; i < std::min(settings.edges, pairs.size()); ++i) {
+        std::ranges::generate(edge_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
+        graph.link(pairs[i].first, pairs[i].second, edge_costs);
     }
     return graph;
 }
 
 void print_assignment(const pbqp::Graph& graph, const pbqp::Solution& solution) {
     std::cout << "assignment:";
-    std::size_t column = 0;
+    size_t column = 0;
     for (const pbqp::NodeId v : graph.nodes()) {
         if (column != 0 && column % 10 == 0) std::cout << "\n           ";
         std::cout << std::format(" v{}={}", v, solution.choices[v]);
@@ -110,16 +110,17 @@ int main(int argc, char** argv) {
                                  graph.edge_count(), settings.options);
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
-        std::cout << std::format("heuristic: cost {:.3f}\n", heuristic.cost);
+        std::cout << std::format("heuristic: cost {}\n", heuristic.cost);
 
         try {
             const pbqp::Solution optimal = pbqp::solve_exhaustive(graph, 2'000'000);
-            std::cout << std::format("brute    : cost {:.3f}", optimal.cost);
-            if (heuristic.cost <= optimal.cost + 1e-9) {
+            std::cout << std::format("brute    : cost {}", optimal.cost);
+            if (heuristic.cost == optimal.cost) {
                 std::cout << "  (heuristic matches the optimum)\n";
             } else {
-                const double gap = 100.0 * (heuristic.cost - optimal.cost) / std::max(optimal.cost, 1e-9);
-                std::cout << std::format("  (heuristic is {:.1f}% above the optimum)\n", gap);
+                const auto gap       = static_cast<double>(heuristic.cost - optimal.cost);
+                const double percent = 100.0 * gap / static_cast<double>(std::max<pbqp::CostSum>(optimal.cost, 1));
+                std::cout << std::format("  (heuristic is {:.1f}% above the optimum)\n", percent);
             }
         } catch (const std::runtime_error&) { std::cout << "brute    : skipped, instance too large for brute force\n"; }
 

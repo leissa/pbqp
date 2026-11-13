@@ -19,7 +19,7 @@ and only fall back to something expensive when it pays off.
 
 ```
 CMakeLists.txt              library + demo + tests
-CMakePresets.json           debug / release / asan presets
+CMakePresets.json           debug / release / asan / tsan presets
 include/pbqp/graph.hpp      problem graph (cost vectors and matrices)
 include/pbqp/solver.hpp     solver interface
 src/pbqp/graph.cpp          graph storage, validation
@@ -46,7 +46,8 @@ ctest --preset debug
 ./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40
 ```
 
-For a sanitizer build use `--preset asan`. The library itself is just
+For sanitizer builds use `--preset asan` (address/UB) or `--preset tsan`
+(threads). The library itself is just
 `pbqp::pbqp`; link it from another CMake target with
 `target_link_libraries(my_target PRIVATE pbqp::pbqp)`.
 
@@ -57,20 +58,31 @@ For a sanitizer build use `--preset asan`. The library itself is just
 #include "pbqp/solver.hpp"
 
 pbqp::Graph graph;
-const auto a = graph.add_node({1.0, 4.0});       // two options
-const auto b = graph.add_node({0.0, 2.0});
-graph.add_edge(a, b, {
-    0.0, 9.0,   // a = 0, b = 0 / a = 0, b = 1
-    9.0, 0.0,   // a = 1, b = 0 / a = 1, b = 1
+const auto a = graph.add_node({1, 4});       // two options
+const auto b = graph.add_node({0, 2});
+graph.link(a, b, {
+    0, 9,   // a = 0, b = 0 / a = 0, b = 1
+    9, 0,   // a = 1, b = 0 / a = 1, b = 1
 });
 
 const pbqp::Solution solution = pbqp::solve(graph);
 // solution.choices[a], solution.choices[b], solution.cost
 ```
 
+Costs are `pbqp::Cost` (`std::int16_t`) and totals are `pbqp::CostSum`
+(`std::int64_t`). Intermediate sums saturate at the `Cost` limits, so
+`std::numeric_limits<pbqp::Cost>::max()` works as "forbidden" as long as
+feasible costs stay far below it. Negative entries are ordinary rewards
+(register-allocation affinity edges).
+
 `solve` returns a feasible assignment plus its cost under the original graph.
-`solve_exhaustive` computes the true optimum for tiny instances and is handy in
-tests. `evaluate` prices any assignment you already have.
+`solve_exhaustive` computes the true optimum for tiny instances, splitting the
+search space across `thread_count` threads (0 = hardware concurrency).
+`evaluate` prices any assignment you already have.
+
+All solver functions are safe to call concurrently on a shared graph; a graph
+must not be mutated while another thread reads it. `solve` works on its own
+copy, so independent instances can be solved in parallel too.
 
 ## What the solver does
 
@@ -91,6 +103,10 @@ the final choices of its neighbours.
 
 Graph ids are stable and removing a node/edge simply leaves a hole, so no
 index bookkeeping is required while reducing.
+
+The RI/RII kernels add and minimise 16-bit costs with saturating SIMD:
+AVX-512BW or AVX2 is picked at runtime on x86, NEON on ARM, and a portable
+scalar loop covers everything else.
 
 ## Ideas for what to add
 
