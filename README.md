@@ -29,8 +29,10 @@ CMakeLists.txt              library + demo + tests
 CMakePresets.json           debug / release / asan / tsan presets
 include/pbqp/graph.hpp      problem graph (cost vectors and matrices)
 include/pbqp/solver.hpp     solver interface
+include/pbqp/dot.hpp        Graphviz DOT export
 src/pbqp/graph.cpp          graph storage, validation
 src/pbqp/solver.cpp         reduction-based heuristic
+src/pbqp/dot.cpp            DOT writer
 apps/pbqp_demo.cpp          random instance generator and CLI
 tests/test_pbqp.cpp         test binary (CTest)
 submodules/                 git submodules: svector (used), doctest, unordered_dense
@@ -51,6 +53,9 @@ ctest --preset debug
 
 # random instance: 20 nodes, 3 options each, 40 edges
 ./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40
+
+# render it with the heuristic assignment highlighted
+./build/debug/pbqp_demo --nodes 8 --options 3 --edges 12 --dot g.dot && dot -Tsvg g.dot -o g.svg
 ```
 
 For sanitizer builds use `--preset asan` (address/UB) or `--preset tsan`

@@ -14,6 +14,7 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(pbqp
+    src/pbqp/dot.cpp
     src/pbqp/graph.cpp
     src/pbqp/solver.cpp
 )

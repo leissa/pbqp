@@ -17,7 +17,7 @@ ctest --preset debug
 | Build | `cmake --build --preset debug` (also `release`, `asan`, `tsan`) |
 | Tests | `ctest --preset debug --output-on-failure` |
 | One test binary | `./build/debug/pbqp_tests` |
-| Demo | `./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40` |
+| Demo | `./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40` (`--dot FILE` writes Graphviz) |
 | Format | `clang-format -i include/pbqp/*.hpp src/pbqp/*.cpp apps/*.cpp tests/*.cpp` |
 
 Warnings are on (`-Wall -Wextra -Wpedantic -Wconversion -Wshadow`) and the build is kept warning-free; `-DPBQP_WARNINGS_AS_ERRORS=ON` enforces that.

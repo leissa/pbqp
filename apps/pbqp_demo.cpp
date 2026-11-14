@@ -5,14 +5,17 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <print>
 #include <random>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
 #include <ankerl/svector.h>
 
+#include "pbqp/dot.hpp"
 #include "pbqp/graph.hpp"
 #include "pbqp/solver.hpp"
 
@@ -23,12 +26,14 @@ struct Settings {
     size_t options     = 4;
     size_t edges       = 24;
     std::uint64_t seed = 42;
+    std::string dot;
 };
 
 void print_usage(std::string_view program) {
-    std::println("usage: {} [--nodes N] [--options K] [--edges E] [--seed S]", program);
+    std::println("usage: {} [--nodes N] [--options K] [--edges E] [--seed S] [--dot FILE]", program);
     std::println("  builds a random PBQP instance, solves it, and (for small instances)");
     std::println("  compares the heuristic result against brute force");
+    std::println("  --dot writes the instance and the heuristic assignment as Graphviz DOT");
 }
 
 template<class T>
@@ -58,6 +63,8 @@ Settings parse(int argc, char** argv) {
             settings.edges = parse_number<size_t>(argument, next(argument));
         else if (argument == "--seed")
             settings.seed = parse_number<std::uint64_t>(argument, next(argument));
+        else if (argument == "--dot")
+            settings.dot = next(argument);
         else if (argument == "-h" || argument == "--help") {
             print_usage(argv[0]);
             std::exit(0);
@@ -156,6 +163,12 @@ int main(int argc, char** argv) {
         }
 
         print_assignment(graph, heuristic);
+
+        if (!settings.dot.empty()) {
+            std::ofstream dot{settings.dot};
+            if (!dot) throw std::runtime_error(std::format("cannot open '{}'", settings.dot));
+            pbqp::write_dot(dot, graph, heuristic.choices);
+        }
         return 0;
     } catch (const std::exception& error) {
         std::println(stderr, "error: {}", error.what());

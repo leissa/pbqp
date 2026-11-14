@@ -6,11 +6,14 @@
 #include <iostream>
 #include <limits>
 #include <random>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <utility>
 
 #include <ankerl/svector.h>
 
+#include "pbqp/dot.hpp"
 #include "pbqp/graph.hpp"
 #include "pbqp/solver.hpp"
 
@@ -613,6 +616,29 @@ void concurrent_solves_share_a_graph() {
     }
 }
 
+void dot_shows_costs_and_choices() {
+    pbqp::Graph graph;
+    const pbqp::NodeId a = graph.add_node({3, 4});
+    const pbqp::NodeId b = graph.add_node({7});
+    graph.remove_node(graph.add_node({0}));
+    graph.link(a, b, {pbqp::kInfinity, 5});
+
+    std::ostringstream plain;
+    pbqp::write_dot(plain, graph);
+    const std::string text = plain.str();
+    CHECK(text.starts_with("graph pbqp {"));
+    CHECK(text.find("n2") == std::string::npos);
+    CHECK(text.find("n0 -- n1") != std::string::npos);
+    CHECK(text.find("<td>&#8734;</td><td>5</td>") == std::string::npos);
+    CHECK(text.find("<tr><td>&#8734;</td></tr><tr><td>5</td></tr>") != std::string::npos);
+    CHECK(text.find("palegreen") == std::string::npos);
+
+    std::ostringstream chosen;
+    pbqp::write_dot(chosen, graph, pbqp::solve(graph).choices);
+    CHECK(chosen.str().find(R"(<td bgcolor="palegreen">5</td>)") != std::string::npos);
+    CHECK(chosen.str().find(R"(<td bgcolor="palegreen">4</td>)") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -644,6 +670,7 @@ int main() {
     parallel_exhaustive_matches_sequential();
     wide_option_vectors_stay_exact();
     concurrent_solves_share_a_graph();
+    dot_shows_costs_and_choices();
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed\n";
