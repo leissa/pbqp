@@ -131,8 +131,8 @@ Graph::MatrixId Graph::intern(fe::View<Cost> costs) {
     const auto bytes  = std::string_view(reinterpret_cast<const char*>(costs.data()), costs.size() * sizeof(Cost));
     const size_t hash = ankerl::unordered_dense::hash<std::string_view>{}(bytes);
 
-    const auto it = matrix_by_hash_.try_emplace(hash, npos).first;
-    for (MatrixId id = it->second; id != npos; id = matrices_[id].next) {
+    const auto i = hash2matrix_.try_emplace(hash, npos).first;
+    for (MatrixId id = i->second; id != npos; id = matrices_[id].next) {
         if (std::ranges::equal(matrices_[id].costs, costs)) {
             ++matrices_[id].refs;
             return id;
@@ -150,9 +150,9 @@ Graph::MatrixId Graph::intern(fe::View<Cost> costs) {
         .costs = {costs.begin(), costs.end()},
         .hash  = hash,
         .refs  = 1,
-        .next  = it->second
+        .next  = i->second
     };
-    it->second = id;
+    i->second = id;
     ++num_matrices_;
     return id;
 }
@@ -161,14 +161,14 @@ void Graph::release(MatrixId id) {
     Matrix& matrix = matrices_[id];
     if (--matrix.refs != 0) return;
 
-    const auto it = matrix_by_hash_.find(matrix.hash);
-    if (it->second == id) {
+    const auto i = hash2matrix_.find(matrix.hash);
+    if (i->second == id) {
         if (matrix.next == npos)
-            matrix_by_hash_.erase(it);
+            hash2matrix_.erase(i);
         else
-            it->second = matrix.next;
+            i->second = matrix.next;
     } else {
-        MatrixId prev = it->second;
+        MatrixId prev = i->second;
         while (matrices_[prev].next != id)
             prev = matrices_[prev].next;
         matrices_[prev].next = matrix.next;

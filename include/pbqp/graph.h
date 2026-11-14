@@ -133,7 +133,7 @@ private:
     fe::Bitset node_mask_;
     fe::Bitset edge_mask_;
     fe::Vector<Matrix, 2> matrices_;
-    ankerl::unordered_dense::map<size_t, MatrixId> matrix_by_hash_;
+    ankerl::unordered_dense::map<size_t, MatrixId> hash2matrix_;
     MatrixId free_matrix_ = npos;
     size_t num_matrices_  = 0;
 };

@@ -70,8 +70,8 @@ For sanitizer builds use `--preset asan` (address/UB) or `--preset tsan`
 #include "pbqp/solver.h"
 
 pbqp::Graph graph;
-const auto a = graph.add_node({1, 4});       // two options
-const auto b = graph.add_node({0, 2});
+const auto a = graph.add({1, 4}); // two options
+const auto b = graph.add({0, 2});
 graph.link(a, b, {
     0, 9,   // a = 0, b = 0 / a = 0, b = 1
     9, 0,   // a = 1, b = 0 / a = 1, b = 1
