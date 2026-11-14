@@ -158,3 +158,5 @@ AVX2 variants that are picked at runtime.
 - Scholz et al., *Partitioned Boolean Quadratic Programming* (2007)
 - Hames & Scholz, *Nearly Optimal Register Allocation with PBQP* (2006)
 - Briggs, *Register Allocation via Graph Coloring* (PhD thesis, 1992) - RN/RI/RII reductions
+- Buchwald & Zwinkau, *Instruction Selection by Graph Transformation* (CASES 2010)
+- Buchwald, Zwinkau & Bersch, *SSA-based Register Allocation with PBQP* (CC 2011) - RM, PEO-ordered RN
