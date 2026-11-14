@@ -4,6 +4,7 @@
 
 #include <optional>
 
+#include <fe/bitset.h>
 #include <fe/span.h>
 
 #include "pbqp/graph.h"
@@ -28,6 +29,8 @@ struct Solution {
     Choices choices;
     /// Total cost of the assignment under the original graph.
     CostSum cost = 0;
+    /// Nodes whose choice hits a kInfinity entry, see `conflicts`; empty iff feasible.
+    fe::Bitset conflicts;
     Statistics statistics;
 
     [[nodiscard]] bool feasible() const { return cost != kInfiniteSum; }
@@ -38,6 +41,11 @@ struct Solution {
 /// Cost of `choices` under `graph`, or kInfiniteSum if it picks a kInfinity entry.
 /// Requires a valid option for every live node.
 [[nodiscard]] CostSum evaluate(const Graph& graph, fe::View<OptionIndex> choices);
+
+/// Nodes whose choice is kInfinity in their cost vector or, given the neighbour's choice, in an incident matrix.
+/// These are the candidates to spill or split when an assignment is infeasible.
+/// Requires a valid option for every live node.
+[[nodiscard]] fe::Bitset conflicts(const Graph& graph, fe::View<OptionIndex> choices);
 
 /// Heuristic PBQP solver.
 ///

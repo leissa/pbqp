@@ -5,6 +5,7 @@
 
 #include <limits>
 
+#include <ankerl/unordered_dense.h>
 #include <fe/bitset.h>
 #include <fe/span.h>
 #include <fe/vector.h>
@@ -57,6 +58,9 @@ public:
     /// Link `m` and `n` with a row-major num_options(m) x num_options(n) matrix.
     /// Requires distinct nodes that are not linked yet.
     EdgeId link(NodeId m, NodeId n, fe::View<Cost> costs);
+    /// Like link, but sums `costs` onto an existing edge between `m` and `n`, whichever way it points.
+    /// Sums saturate and kInfinity absorbs.
+    EdgeId add_edge_costs(NodeId m, NodeId n, fe::View<Cost> costs);
 
     void unlink(EdgeId e);
     void remove(NodeId n);
@@ -94,26 +98,44 @@ public:
 
     [[nodiscard]] size_t num_nodes() const { return node_mask_.count(); }
     [[nodiscard]] size_t num_edges() const { return edge_mask_.count(); }
+    /// Number of distinct edge matrices; edges with equal matrices share one copy.
+    [[nodiscard]] size_t num_matrices() const { return num_matrices_; }
 
 private:
+    using MatrixId = size_t;
+
+    struct Matrix {
+        Costs costs;
+        size_t hash   = 0;
+        size_t refs   = 0;
+        MatrixId next = npos; // next matrix with the same hash while referenced, next free slot otherwise
+    };
+
     struct Node {
         Costs costs;
         Edges edges; // incident live edges, no duplicates
     };
 
     struct Edge {
-        NodeId src = 0;
-        NodeId dst = 0;
-        Costs costs;
+        NodeId src      = 0;
+        NodeId dst      = 0;
+        MatrixId matrix = npos;
     };
 
     [[nodiscard]] const Node& checked_node(NodeId n) const;
     [[nodiscard]] const Edge& checked_edge(EdgeId e) const;
 
+    [[nodiscard]] MatrixId intern(fe::View<Cost> costs);
+    void release(MatrixId id);
+
     fe::Vector<Node, 2> nodes_;
     fe::Vector<Edge, 2> edges_;
     fe::Bitset node_mask_;
     fe::Bitset edge_mask_;
+    fe::Vector<Matrix, 2> matrices_;
+    ankerl::unordered_dense::map<size_t, MatrixId> matrix_by_hash_;
+    MatrixId free_matrix_ = npos;
+    size_t num_matrices_  = 0;
 };
 
 } // namespace pbqp

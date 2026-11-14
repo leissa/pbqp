@@ -418,7 +418,49 @@ void infeasible_instances_are_reported() {
     const pbqp::Costs interference = {pbqp::kInfinity, 0, 0, pbqp::kInfinity};
     for (pbqp::NodeId n = 0; n < 3; ++n)
         graph.link(n, (n + 1) % 3, interference);
-    CHECK(!pbqp::solve(graph).feasible());
+    const pbqp::Solution solution = pbqp::solve(graph);
+    CHECK(!solution.feasible());
+    CHECK(solution.conflicts.count() >= 2);
+    CHECK(solution.conflicts == pbqp::conflicts(graph, solution.choices));
+
+    const auto optimal = pbqp::solve_exhaustive(graph);
+    CHECK(optimal && !optimal->feasible() && optimal->conflicts.count() >= 2);
+}
+
+void conflicts_name_the_forbidden_nodes() {
+    pbqp::Graph graph;
+    const pbqp::NodeId a = graph.add({0, 0});
+    const pbqp::NodeId b = graph.add({0, pbqp::kInfinity});
+    const pbqp::NodeId c = graph.add({0, 0});
+    const pbqp::NodeId d = graph.add({0, 0});
+    graph.link(c, d, {pbqp::kInfinity, 0, 0, 0});
+
+    const pbqp::Choices choices = {0, 1, 0, 0};
+    const fe::Bitset expected   = {b, c, d};
+    CHECK(pbqp::conflicts(graph, choices) == expected);
+    CHECK(!pbqp::conflicts(graph, choices).test(a));
+    CHECK(pbqp::conflicts(graph, pbqp::Choices{0, 0, 1, 0}).count() == 0);
+    CHECK(pbqp::solve(graph).conflicts.count() == 0);
+}
+
+void add_edge_costs_accumulates_in_either_direction() {
+    pbqp::Graph graph;
+    const pbqp::NodeId m = graph.add({0, 0});
+    const pbqp::NodeId n = graph.add({0, 0, 0});
+
+    const pbqp::EdgeId e = graph.add_edge_costs(m, n, {1, 2, 3, 4, 5, 6});
+    CHECK(graph.find_edge(m, n) == e);
+    CHECK(graph.add_edge_costs(m, n, {10, 0, 0, 0, 0, pbqp::kInfinity}) == e);
+    CHECK(graph.add_edge_costs(n, m, {0, 100, -2, 0, 0, 0}) == e);
+    CHECK(graph.num_edges() == 1);
+
+    const pbqp::Costs expected = {11, 0, 3, 104, 5, pbqp::kInfinity};
+    CHECK(std::ranges::equal(graph.edge_costs(e), expected));
+
+    graph.add_edge_costs(m, n, {pbqp::kInfinity - 1, -5, 0, 0, 0, -1});
+    CHECK(graph.edge_cost(e, 0, 0) == pbqp::kInfinity);
+    CHECK(graph.edge_cost(e, 0, 1) == -5);
+    CHECK(graph.edge_cost(e, 1, 2) == pbqp::kInfinity);
 }
 
 void rm_merges_implied_neighbour() {
@@ -490,6 +532,98 @@ void accessors_and_setters_round_trip() {
     graph.set_edge_costs(e, std::array<pbqp::Cost, 6>{6, 5, 4, 3, 2, 1});
     CHECK(graph.node_costs(m)[1] == 8);
     CHECK(graph.edge_cost(e, 1, 2) == 1);
+}
+
+void equal_matrices_are_shared() {
+    pbqp::Graph graph;
+    fe::Vector<pbqp::NodeId> nodes;
+    for (int i = 0; i < 4; ++i)
+        nodes.emplace_back(graph.add({0, 0}));
+    const pbqp::Costs interference = {pbqp::kInfinity, 0, 0, pbqp::kInfinity};
+
+    const pbqp::EdgeId ab = graph.link(nodes[0], nodes[1], interference);
+    const pbqp::EdgeId bc = graph.link(nodes[1], nodes[2], interference);
+    const pbqp::EdgeId cd = graph.link(nodes[2], nodes[3], interference);
+    CHECK(graph.num_matrices() == 1);
+
+    graph.add_edge_costs(nodes[0], nodes[1], {0, -1, -1, 0});
+    CHECK(graph.num_matrices() == 2);
+    CHECK(graph.edge_cost(ab, 0, 1) == -1);
+    CHECK(graph.edge_cost(bc, 0, 1) == 0);
+
+    graph.set_edge_costs(bc, graph.edge_costs(ab));
+    graph.set_edge_costs(cd, graph.edge_costs(ab));
+    CHECK(graph.num_matrices() == 1);
+
+    graph.unlink(ab);
+    graph.remove(nodes[3]);
+    CHECK(graph.num_matrices() == 1);
+    graph.remove(nodes[1]);
+    CHECK(graph.num_matrices() == 0);
+
+    graph.link(nodes[0], nodes[2], interference);
+    CHECK(graph.num_matrices() == 1);
+    CHECK(pbqp::solve(graph).cost == 0);
+}
+
+void shared_matrices_survive_random_mutations() {
+    std::mt19937_64 random{42};
+    std::uniform_int_distribution<int> pick{0, 3};
+    const std::array<pbqp::Costs, 4> palette = {
+        pbqp::Costs{              0, 1, 2,               3},
+        pbqp::Costs{pbqp::kInfinity, 0, 0, pbqp::kInfinity},
+        pbqp::Costs{              0, 0, 0,               0},
+        pbqp::Costs{              3, 2, 1,               0},
+    };
+
+    pbqp::Graph graph;
+    const size_t num_nodes = 12;
+    for (size_t i = 0; i < num_nodes; ++i)
+        graph.add({0, 0});
+
+    fe::Vector<pbqp::Costs> shadow;
+    std::uniform_int_distribution<size_t> node{0, num_nodes - 1};
+    for (int step = 0; step < 2000; ++step) {
+        const pbqp::NodeId m = node(random);
+        const pbqp::NodeId n = node(random);
+        if (m == n) continue;
+        const pbqp::Costs& costs = palette[static_cast<size_t>(pick(random))];
+        const pbqp::EdgeId e     = graph.find_edge(m, n);
+        switch (pick(random)) {
+            case 0:
+                if (e != pbqp::Graph::npos) graph.unlink(e);
+                break;
+            case 1:
+                if (e != pbqp::Graph::npos) {
+                    graph.set_edge_costs(e, costs);
+                    shadow[e] = costs;
+                }
+                break;
+            default: {
+                const pbqp::EdgeId linked = graph.add_edge_costs(m, n, costs);
+                if (linked >= shadow.size()) shadow.resize(linked + 1);
+                if (e == pbqp::Graph::npos) {
+                    shadow[linked] = costs;
+                } else {
+                    const bool same_way = graph.edge(e).src == m;
+                    for (size_t r = 0; r < 2; ++r)
+                        for (size_t c = 0; c < 2; ++c) {
+                            pbqp::Cost& entry    = shadow[e][same_way ? r * 2 + c : c * 2 + r];
+                            const pbqp::Cost add = costs[r * 2 + c];
+                            entry = entry == pbqp::kInfinity || add == pbqp::kInfinity ? pbqp::kInfinity : entry + add;
+                        }
+                }
+                break;
+            }
+        }
+    }
+
+    fe::Vector<pbqp::Costs> distinct;
+    for (const auto e : graph.edges()) {
+        CHECK(std::ranges::equal(graph.edge_costs(e), shadow[e]));
+        if (std::ranges::find(distinct, shadow[e]) == distinct.end()) distinct.emplace_back(shadow[e]);
+    }
+    CHECK(graph.num_matrices() == distinct.size());
 }
 
 void removal_keeps_ids_stable() {
@@ -783,11 +917,15 @@ int main() {
     peo_priority_always_colors_chordal_graphs();
     statistics_count_every_node();
     infeasible_instances_are_reported();
+    conflicts_name_the_forbidden_nodes();
+    add_edge_costs_accumulates_in_either_direction();
     rm_merges_implied_neighbour();
     evaluate_prices_an_assignment();
     exhaustive_refuses_large_instances();
     find_edge_works_in_both_directions();
     accessors_and_setters_round_trip();
+    equal_matrices_are_shared();
+    shared_matrices_survive_random_mutations();
     removal_keeps_ids_stable();
     parallel_exhaustive_matches_sequential();
     wide_option_vectors_stay_exact();
