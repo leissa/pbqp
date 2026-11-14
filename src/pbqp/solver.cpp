@@ -1,4 +1,4 @@
-#include "pbqp/solver.hpp"
+#include "pbqp/solver.h"
 
 #include <cassert>
 #include <cstddef>

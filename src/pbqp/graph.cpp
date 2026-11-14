@@ -1,4 +1,4 @@
-#include "pbqp/graph.hpp"
+#include "pbqp/graph.h"
 
 #include <cassert>
 

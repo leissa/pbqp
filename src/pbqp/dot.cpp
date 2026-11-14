@@ -1,4 +1,4 @@
-#include "pbqp/dot.hpp"
+#include "pbqp/dot.h"
 
 #include <cassert>
 

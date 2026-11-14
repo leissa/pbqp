@@ -15,9 +15,9 @@
 
 #include <ankerl/svector.h>
 
-#include "pbqp/dot.hpp"
-#include "pbqp/graph.hpp"
-#include "pbqp/solver.hpp"
+#include "pbqp/dot.h"
+#include "pbqp/graph.h"
+#include "pbqp/solver.h"
 
 namespace {
 

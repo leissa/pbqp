@@ -3,7 +3,7 @@
 #include <ostream>
 #include <span>
 
-#include "pbqp/graph.hpp"
+#include "pbqp/graph.h"
 
 namespace pbqp {
 

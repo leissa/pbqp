@@ -27,9 +27,9 @@ and only fall back to something expensive when it pays off.
 ```
 CMakeLists.txt              library + demo + tests
 CMakePresets.json           debug / release / asan / tsan presets
-include/pbqp/graph.hpp      problem graph (cost vectors and matrices)
-include/pbqp/solver.hpp     solver interface
-include/pbqp/dot.hpp        Graphviz DOT export
+include/pbqp/graph.h        problem graph (cost vectors and matrices)
+include/pbqp/solver.h       solver interface
+include/pbqp/dot.h          Graphviz DOT export
 src/pbqp/graph.cpp          graph storage, validation
 src/pbqp/solver.cpp         reduction-based heuristic
 src/pbqp/dot.cpp            DOT writer
@@ -66,8 +66,8 @@ For sanitizer builds use `--preset asan` (address/UB) or `--preset tsan`
 ## Using the library
 
 ```cpp
-#include "pbqp/graph.hpp"
-#include "pbqp/solver.hpp"
+#include "pbqp/graph.h"
+#include "pbqp/solver.h"
 
 pbqp::Graph graph;
 const auto a = graph.add_node({1, 4});       // two options
