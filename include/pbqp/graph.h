@@ -4,9 +4,8 @@
 #include <cstdint>
 
 #include <limits>
-#include <numeric>
-#include <ranges>
 
+#include <fe/bitset.h>
 #include <fe/span.h>
 #include <fe/vector.h>
 
@@ -89,31 +88,23 @@ public:
     /// The edge between `m` and `n`, or npos.
     [[nodiscard]] EdgeId find_edge(NodeId m, NodeId n) const;
 
-    /// Views over the ids of live nodes and edges. The graph must outlive them.
-    [[nodiscard]] auto nodes() const {
-        return std::views::iota(NodeId{0}, nodes_.size())
-             | std::views::filter([this](NodeId n) { return has_node(n); });
-    }
-    [[nodiscard]] auto edges() const {
-        return std::views::iota(EdgeId{0}, edges_.size())
-             | std::views::filter([this](EdgeId e) { return has_edge(e); });
-    }
+    /// Ids of live nodes and edges in ascending order.
+    [[nodiscard]] const fe::Bitset& nodes() const { return node_mask_; }
+    [[nodiscard]] const fe::Bitset& edges() const { return edge_mask_; }
 
-    [[nodiscard]] size_t num_nodes() const { return live_nodes_; }
-    [[nodiscard]] size_t num_edges() const { return live_edges_; }
+    [[nodiscard]] size_t num_nodes() const { return node_mask_.count(); }
+    [[nodiscard]] size_t num_edges() const { return edge_mask_.count(); }
 
 private:
     struct Node {
         Costs costs;
         Edges edges; // incident live edges, no duplicates
-        bool alive = true;
     };
 
     struct Edge {
         NodeId src = 0;
         NodeId dst = 0;
         Costs costs;
-        bool alive = true;
     };
 
     [[nodiscard]] const Node& checked_node(NodeId n) const;
@@ -121,8 +112,8 @@ private:
 
     fe::Vector<Node, 2> nodes_;
     fe::Vector<Edge, 2> edges_;
-    size_t live_nodes_ = 0;
-    size_t live_edges_ = 0;
+    fe::Bitset node_mask_;
+    fe::Bitset edge_mask_;
 };
 
 } // namespace pbqp

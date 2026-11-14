@@ -10,11 +10,11 @@ NodeId Graph::add(fe::View<Cost> costs) {
     assert((!costs.empty()) && "add_node: a PBQP node needs at least one option");
     nodes_.emplace_back(Node{
         .costs = {costs.begin(), costs.end()},
-        .edges = {},
-        .alive = true
+        .edges = {}
     });
-    ++live_nodes_;
-    return nodes_.size() - 1;
+    const NodeId n = nodes_.size() - 1;
+    node_mask_.set(n);
+    return n;
 }
 
 EdgeId Graph::link(NodeId m, NodeId n, fe::View<Cost> costs) {
@@ -26,22 +26,20 @@ EdgeId Graph::link(NodeId m, NodeId n, fe::View<Cost> costs) {
     edges_.emplace_back(Edge{
         .src   = m,
         .dst   = n,
-        .costs = {costs.begin(), costs.end()},
-        .alive = true
+        .costs = {costs.begin(), costs.end()}
     });
     const EdgeId e = edges_.size() - 1;
     nodes_[m].edges.emplace_back(e);
     nodes_[n].edges.emplace_back(e);
-    ++live_edges_;
+    edge_mask_.set(e);
     return e;
 }
 
 void Graph::unlink(EdgeId e) {
     assert((has_edge(e)) && "remove_edge: unknown edge");
 
-    Edge& removed = edges_[e];
-    removed.alive = false;
-    --live_edges_;
+    const Edge& removed = edges_[e];
+    edge_mask_.clear(e);
     for (const auto endpoint : {removed.src, removed.dst}) {
         auto& incident = nodes_[endpoint].edges;
         erase(incident, e);
@@ -54,13 +52,12 @@ void Graph::remove(NodeId n) {
     const Edges incident = nodes_[n].edges;
     for (const auto e : incident)
         unlink(e);
-    nodes_[n].alive = false;
-    --live_nodes_;
+    node_mask_.clear(n);
 }
 
-bool Graph::has_node(NodeId n) const { return n < nodes_.size() && nodes_[n].alive; }
+bool Graph::has_node(NodeId n) const { return node_mask_.test(n); }
 
-bool Graph::has_edge(EdgeId e) const { return e < edges_.size() && edges_[e].alive; }
+bool Graph::has_edge(EdgeId e) const { return edge_mask_.test(e); }
 
 const Graph::Node& Graph::checked_node(NodeId n) const {
     assert((has_node(n)) && "node: unknown or removed node");
