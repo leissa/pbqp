@@ -3,8 +3,9 @@
 #include <filesystem>
 #include <istream>
 #include <ostream>
-#include <span>
-#include <vector>
+
+#include <fe/span.h>
+#include <fe/vector.h>
 
 #include "pbqp/graph.h"
 
@@ -14,7 +15,7 @@ namespace pbqp {
 struct Instance {
     Graph graph;
     /// Empty, or one entry per node id.
-    std::vector<size_t> rn_priority;
+    fe::Vector<size_t> rn_priority;
 };
 
 /// Read the pbqp-papa JSON format, version 1 (costs as strings) or 2 (costs as integers, `"inf"`).
@@ -24,6 +25,6 @@ struct Instance {
 
 /// Write version 2 of the pbqp-papa JSON format.
 /// Requires `rn_priority` to be empty or to cover every node id.
-void write_json(std::ostream& out, const Graph& graph, std::span<const size_t> rn_priority = {});
+void write_json(std::ostream& out, const Graph& graph, fe::View<size_t> rn_priority = {});
 
 } // namespace pbqp

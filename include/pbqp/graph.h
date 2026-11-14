@@ -3,13 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <initializer_list>
 #include <limits>
 #include <numeric>
 #include <ranges>
-#include <span>
 
-#include <ankerl/svector.h>
+#include <fe/span.h>
+#include <fe/vector.h>
 
 namespace pbqp {
 
@@ -29,10 +28,10 @@ inline constexpr Cost kInfinity       = std::numeric_limits<Cost>::max();
 inline constexpr CostSum kInfiniteSum = std::numeric_limits<CostSum>::max();
 
 /// PBQP vectors and matrices are small, so they live inline.
-using Costs = ankerl::svector<Cost, 4>;
-using Edges = ankerl::svector<EdgeId, 4>;
+using Costs = fe::Vector<Cost, 4>;
+using Edges = fe::Vector<EdgeId, 4>;
 /// One option per live node, indexed by node id.
-using Choices = ankerl::svector<OptionIndex, 8>;
+using Choices = fe::Vector<OptionIndex, 8>;
 
 /// A PBQP problem graph.
 ///
@@ -54,15 +53,11 @@ public:
     static constexpr EdgeId npos = static_cast<EdgeId>(-1);
 
     /// Add a node with the given cost vector. The vector must not be empty.
-    NodeId add(std::span<const Cost> costs);
-    NodeId add(std::initializer_list<Cost> costs) { return add(std::span<const Cost>{costs.begin(), costs.size()}); }
+    NodeId add(fe::View<Cost> costs);
 
     /// Link `m` and `n` with a row-major num_options(m) x num_options(n) matrix.
     /// Requires distinct nodes that are not linked yet.
-    EdgeId link(NodeId m, NodeId n, std::span<const Cost> costs);
-    EdgeId link(NodeId m, NodeId n, std::initializer_list<Cost> costs) {
-        return link(m, n, std::span<const Cost>{costs.begin(), costs.size()});
-    }
+    EdgeId link(NodeId m, NodeId n, fe::View<Cost> costs);
 
     void unlink(EdgeId e);
     void remove(NodeId n);
@@ -70,8 +65,8 @@ public:
     [[nodiscard]] bool has_node(NodeId n) const;
     [[nodiscard]] bool has_edge(EdgeId e) const;
 
-    [[nodiscard]] std::span<const Cost> node_costs(NodeId n) const;
-    [[nodiscard]] std::span<const EdgeId> incident_edges(NodeId n) const;
+    [[nodiscard]] fe::View<Cost> node_costs(NodeId n) const;
+    [[nodiscard]] fe::View<EdgeId> incident_edges(NodeId n) const;
     [[nodiscard]] size_t num_options(NodeId n) const { return node_costs(n).size(); }
 
     struct Endpoints {
@@ -81,12 +76,12 @@ public:
 
     [[nodiscard]] Endpoints edge(EdgeId e) const;
     /// Row-major with the src option as the row.
-    [[nodiscard]] std::span<const Cost> edge_costs(EdgeId e) const;
+    [[nodiscard]] fe::View<Cost> edge_costs(EdgeId e) const;
 
     /// Replace a cost vector; the option count must not change.
-    void set_node_costs(NodeId n, std::span<const Cost> costs);
+    void set_node_costs(NodeId n, fe::View<Cost> costs);
     /// Replace a cost matrix; the size must not change.
-    void set_edge_costs(EdgeId e, std::span<const Cost> costs);
+    void set_edge_costs(EdgeId e, fe::View<Cost> costs);
 
     /// Matrix entry of `e`, addressed as (src option, dst option).
     [[nodiscard]] Cost edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) const;
@@ -124,8 +119,8 @@ private:
     [[nodiscard]] const Node& checked_node(NodeId n) const;
     [[nodiscard]] const Edge& checked_edge(EdgeId e) const;
 
-    ankerl::svector<Node, 2> nodes_;
-    ankerl::svector<Edge, 2> edges_;
+    fe::Vector<Node, 2> nodes_;
+    fe::Vector<Edge, 2> edges_;
     size_t live_nodes_ = 0;
     size_t live_edges_ = 0;
 };

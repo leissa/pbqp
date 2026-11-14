@@ -38,8 +38,8 @@ tests/test_pbqp.cpp         test binary (CTest)
 submodules/fe               git submodule (FE), which vendors svector, unordered_dense and doctest
 ```
 
-Small vectors (cost vectors, matrices, adjacency, solver snapshots) use
-`ankerl::svector`, which the public headers get through the `fe` submodule;
+Containers use `fe::Vector` (small-buffer optimized) and spans use
+`fe::View`/`fe::Span`, which the public headers get through the `fe` submodule;
 `pbqp::pbqp` links `fe` and exports its include directories.
 
 ## Build and run
@@ -155,7 +155,7 @@ AVX2 variants that are picked at runtime.
   optimal-RII variant for small node option counts.
 - Import/export: DIMACS-like text format, or a DOT writer for debugging.
 - An exact branch-and-bound/ILP solver behind the same `solve`-style interface.
-- Swap the plain `std::vector` storage for `std::mdspan` views if you want to
+- Swap the plain `fe::Vector` storage for `std::mdspan` views if you want to
   plug in sparse or blocked matrices.
 
 ## References

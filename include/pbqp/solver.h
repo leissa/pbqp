@@ -3,7 +3,8 @@
 #include <cstddef>
 
 #include <optional>
-#include <span>
+
+#include <fe/span.h>
 
 #include "pbqp/graph.h"
 
@@ -36,7 +37,7 @@ struct Solution {
 ///
 /// Cost of `choices` under `graph`, or kInfiniteSum if it picks a kInfinity entry.
 /// Requires a valid option for every live node.
-[[nodiscard]] CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices);
+[[nodiscard]] CostSum evaluate(const Graph& graph, fe::View<OptionIndex> choices);
 
 /// Heuristic PBQP solver.
 ///
@@ -46,7 +47,7 @@ struct Solution {
 /// RN decides the node with the highest `rn_priority[n]` first; degree and cost spread only break ties.
 /// SSA-based register allocation passes PEO positions, so coloring cannot fail (Buchwald et al. 2011).
 /// Requires `rn_priority` to be empty or to cover every node id.
-[[nodiscard]] Solution solve(const Graph& graph, std::span<const size_t> rn_priority = {});
+[[nodiscard]] Solution solve(const Graph& graph, fe::View<size_t> rn_priority = {});
 
 /// Brute-force optimum, useful to cross-check small instances.
 /// The search space is split across `num_threads` threads (0 = hardware concurrency).

@@ -19,7 +19,7 @@ void print_cell(std::ostream& out, Cost cost, bool chosen) {
 
 } // namespace
 
-void write_dot(std::ostream& out, const Graph& graph, std::span<const OptionIndex> choices) {
+void write_dot(std::ostream& out, const Graph& graph, fe::View<OptionIndex> choices) {
     const bool highlight = !choices.empty();
     for ([[maybe_unused]] const auto n : graph.nodes())
         assert((!highlight || n < choices.size()) && "write_dot: choices must cover every node id");

@@ -11,7 +11,8 @@
 #include <optional>
 #include <queue>
 #include <thread>
-#include <vector>
+
+#include <fe/vector.h>
 
 #if defined(__SANITIZE_THREAD__)
 #    define PBQP_TSAN 1
@@ -80,7 +81,7 @@ struct TrimmedEdge {
 struct Reduction {
     NodeId node = 0;
     Vector costs;
-    ankerl::svector<TrimmedEdge, 4> edges;
+    fe::Vector<TrimmedEdge, 4> edges;
 };
 
 Matrix transpose(const Matrix& in, size_t rows, size_t cols) {
@@ -94,7 +95,7 @@ Matrix transpose(const Matrix& in, size_t rows, size_t cols) {
 /// Normalized working copy of a Graph with degree-bucketed worklists.
 class Reducer {
 public:
-    Reducer(const Graph& graph, std::span<const size_t> rn_priority)
+    Reducer(const Graph& graph, fe::View<size_t> rn_priority)
         : rn_priority_(rn_priority) {
         for (const auto n : graph.nodes())
             nodes_.resize(std::max(nodes_.size(), n + 1));
@@ -146,7 +147,7 @@ public:
         return Graph::npos;
     }
 
-    void reduce(NodeId n, std::vector<Reduction>& stack) {
+    void reduce(NodeId n, fe::Vector<Reduction>& stack) {
         if (degree(n) > 2 && options(n) > 1) {
             bool merged = false;
             while (merge_neighbour(n, stack))
@@ -180,7 +181,7 @@ public:
 private:
     struct Node {
         Vector costs;
-        ankerl::svector<OptionIndex, 4> original; // original[working option]
+        fe::Vector<OptionIndex, 4> original; // original[working option]
         Edges edges;
         size_t original_options = 0;
         size_t version          = 0;
@@ -442,10 +443,10 @@ private:
     }
 
     /// The option of `m` that each option of `n` forces, or nothing if some option of `n` leaves `m` a choice.
-    [[nodiscard]] std::optional<ankerl::svector<OptionIndex, 4>> implied_options(EdgeId e, NodeId n) const {
+    [[nodiscard]] std::optional<fe::Vector<OptionIndex, 4>> implied_options(EdgeId e, NodeId n) const {
         const TrimmedEdge edge = trim_edge(e, n);
         const Vector& m_costs  = nodes_[edge.neighbour].costs;
-        ankerl::svector<OptionIndex, 4> implied(options(n), Graph::npos);
+        fe::Vector<OptionIndex, 4> implied(options(n), Graph::npos);
         for (OptionIndex i = 0; i < options(n); ++i) {
             if (nodes_[n].costs[i] == kInfinity) continue;
             for (OptionIndex j = 0; j < edge.neighbour_options; ++j) {
@@ -458,7 +459,7 @@ private:
     }
 
     /// RM (Buchwald et al. 2011): moves the other edges of a neighbour whose option `n` determines onto `n`.
-    bool merge_neighbour(NodeId n, std::vector<Reduction>& stack) {
+    bool merge_neighbour(NodeId n, fe::Vector<Reduction>& stack) {
         for (const auto e : nodes_[n].edges) {
             const NodeId m = other_end(e, n);
             if (degree(m) < 2) continue;
@@ -514,13 +515,13 @@ private:
         }
     }
 
-    std::vector<Node> nodes_;
-    std::vector<Edge> edges_;
-    std::vector<NodeId> low_;
-    std::vector<NodeId> dirty_;
-    std::span<const size_t> rn_priority_;
+    fe::Vector<Node> nodes_;
+    fe::Vector<Edge> edges_;
+    fe::Vector<NodeId> low_;
+    fe::Vector<NodeId> dirty_;
+    fe::View<size_t> rn_priority_;
     Statistics statistics_;
-    std::priority_queue<Candidate, std::vector<Candidate>, std::greater<>> high_;
+    std::priority_queue<Candidate, fe::Vector<Candidate>, std::greater<>> high_;
 };
 
 /// Exact for degree <= 2 snapshots; RN nodes may still improve on their RN choice here.
@@ -542,7 +543,7 @@ OptionIndex back_substitute(const Reduction& reduction, const Choices& choices) 
 
 } // namespace
 
-CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
+CostSum evaluate(const Graph& graph, fe::View<OptionIndex> choices) {
     CostSum total = 0;
 
     for (const auto n : graph.nodes()) {
@@ -558,9 +559,9 @@ CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
     return total;
 }
 
-Solution solve(const Graph& graph, std::span<const size_t> rn_priority) {
+Solution solve(const Graph& graph, fe::View<size_t> rn_priority) {
     Reducer reducer{graph, rn_priority};
-    std::vector<Reduction> stack;
+    fe::Vector<Reduction> stack;
     stack.reserve(graph.num_nodes());
 
     for (NodeId n = reducer.next(); n != Graph::npos; n = reducer.next())
@@ -578,9 +579,9 @@ namespace {
 
 /// Mixed-radix layout of the assignment space; digit i belongs to nodes[i].
 struct Enumeration {
-    ankerl::svector<NodeId, 16> nodes;
-    ankerl::svector<size_t, 16> options;
-    ankerl::svector<size_t, 16> place;
+    fe::Vector<NodeId, 16> nodes;
+    fe::Vector<size_t, 16> options;
+    fe::Vector<size_t, 16> place;
     size_t slots        = 0;
     size_t combinations = 1;
 };
@@ -655,9 +656,9 @@ std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinat
 
     if (workers <= 1) return search_range(graph, enumeration, 0, enumeration.combinations).solution;
 
-    std::vector<BestAssignment> partials(workers);
+    fe::Vector<BestAssignment> partials(workers);
     {
-        std::vector<std::jthread> threads;
+        fe::Vector<std::jthread> threads;
         threads.reserve(workers);
 
         const size_t base  = enumeration.combinations / workers;

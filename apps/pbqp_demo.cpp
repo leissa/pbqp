@@ -12,9 +12,9 @@
 #include <string>
 #include <utility>
 
-#include <ankerl/svector.h>
 #include <fe/cli.h>
 #include <fe/error.h>
+#include <fe/vector.h>
 
 #include "pbqp/dot.h"
 #include "pbqp/graph.h"
@@ -44,7 +44,7 @@ pbqp::Graph random_instance(const Settings& settings) {
     std::uniform_int_distribution<int> cost{0, 10};
 
     pbqp::Graph graph;
-    ankerl::svector<pbqp::Cost, 4> node_costs(settings.options);
+    fe::Vector<pbqp::Cost, 4> node_costs(settings.options);
     for (size_t i = 0; i < settings.nodes; ++i) {
         std::ranges::generate(node_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
         graph.add(node_costs);
@@ -54,14 +54,14 @@ pbqp::Graph random_instance(const Settings& settings) {
                                                      : (settings.nodes - 1) / 2 * settings.nodes;
     const size_t edges     = std::min(settings.edges, max_edges);
 
-    ankerl::svector<pbqp::Cost, 4> edge_costs(settings.options * settings.options);
+    fe::Vector<pbqp::Cost, 4> edge_costs(settings.options * settings.options);
     const auto link = [&](pbqp::NodeId m, pbqp::NodeId n) {
         std::ranges::generate(edge_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
         graph.link(m, n, edge_costs);
     };
 
     if (2 * edges > max_edges) {
-        ankerl::svector<std::pair<pbqp::NodeId, pbqp::NodeId>, 8> pairs;
+        fe::Vector<std::pair<pbqp::NodeId, pbqp::NodeId>, 8> pairs;
         pairs.reserve(max_edges);
         for (pbqp::NodeId m = 0; m < settings.nodes; ++m)
             for (pbqp::NodeId n = m + 1; n < settings.nodes; ++n)

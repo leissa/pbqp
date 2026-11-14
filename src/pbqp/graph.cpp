@@ -6,7 +6,7 @@
 
 namespace pbqp {
 
-NodeId Graph::add(std::span<const Cost> costs) {
+NodeId Graph::add(fe::View<Cost> costs) {
     assert((!costs.empty()) && "add_node: a PBQP node needs at least one option");
     nodes_.emplace_back(Node{
         .costs = {costs.begin(), costs.end()},
@@ -17,7 +17,7 @@ NodeId Graph::add(std::span<const Cost> costs) {
     return nodes_.size() - 1;
 }
 
-EdgeId Graph::link(NodeId m, NodeId n, std::span<const Cost> costs) {
+EdgeId Graph::link(NodeId m, NodeId n, fe::View<Cost> costs) {
     assert((has_node(m) && has_node(n)) && "link: unknown node");
     assert((m != n) && "link: self edges are not supported, fold them into the node cost vector instead");
     assert((find_edge(m, n) == npos) && "link: an edge between these nodes already exists, merge the matrices instead");
@@ -72,23 +72,23 @@ const Graph::Edge& Graph::checked_edge(EdgeId e) const {
     return edges_[e];
 }
 
-std::span<const Cost> Graph::node_costs(NodeId n) const { return checked_node(n).costs; }
+fe::View<Cost> Graph::node_costs(NodeId n) const { return checked_node(n).costs; }
 
-std::span<const EdgeId> Graph::incident_edges(NodeId n) const { return checked_node(n).edges; }
+fe::View<EdgeId> Graph::incident_edges(NodeId n) const { return checked_node(n).edges; }
 
 Graph::Endpoints Graph::edge(EdgeId e) const {
     const Edge& edge = checked_edge(e);
     return {.src = edge.src, .dst = edge.dst};
 }
 
-std::span<const Cost> Graph::edge_costs(EdgeId e) const { return checked_edge(e).costs; }
+fe::View<Cost> Graph::edge_costs(EdgeId e) const { return checked_edge(e).costs; }
 
-void Graph::set_node_costs(NodeId n, std::span<const Cost> costs) {
+void Graph::set_node_costs(NodeId n, fe::View<Cost> costs) {
     assert((costs.size() == num_options(n)) && "set_node_costs: option count must not change");
     std::ranges::copy(costs, nodes_[n].costs.begin());
 }
 
-void Graph::set_edge_costs(EdgeId e, std::span<const Cost> costs) {
+void Graph::set_edge_costs(EdgeId e, fe::View<Cost> costs) {
     assert((costs.size() == checked_edge(e).costs.size()) && "set_edge_costs: cost matrix has the wrong size");
     std::ranges::copy(costs, edges_[e].costs.begin());
 }

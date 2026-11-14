@@ -14,7 +14,7 @@
 #include <thread>
 #include <utility>
 
-#include <ankerl/svector.h>
+#include <fe/vector.h>
 
 #include "pbqp/dot.h"
 #include "pbqp/graph.h"
@@ -76,11 +76,11 @@ void triangle_with_conflicting_colours() {
     // Two colours, an odd cycle, and a penalty for monochromatic edges: one
     // edge has to be paid for no matter what.
     pbqp::Graph graph;
-    ankerl::svector<pbqp::NodeId, 4> nodes;
+    fe::Vector<pbqp::NodeId, 4> nodes;
     for (int i = 0; i < 3; ++i)
         nodes.emplace_back(graph.add({0, 0}));
 
-    const ankerl::svector<pbqp::Cost, 4> same_colour = {
+    const fe::Vector<pbqp::Cost, 4> same_colour = {
         5,
         0,
         0,
@@ -108,14 +108,14 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
 
         pbqp::Graph graph;
         for (size_t i = 0; i < num_nodes; ++i) {
-            ankerl::svector<pbqp::Cost, 4> values(num_options(random));
+            fe::Vector<pbqp::Cost, 4> values(num_options(random));
             std::ranges::generate(values, next_cost);
             graph.add(values);
         }
 
         for (pbqp::NodeId n = 1; n < num_nodes; ++n) {
             const pbqp::NodeId m = std::uniform_int_distribution<size_t>{0, n - 1}(random);
-            ankerl::svector<pbqp::Cost, 4> matrix(graph.num_options(m) * graph.num_options(n));
+            fe::Vector<pbqp::Cost, 4> matrix(graph.num_options(m) * graph.num_options(n));
             std::ranges::generate(matrix, next_cost);
             if (cost(random) % 2 == 0)
                 graph.link(m, n, matrix);
@@ -178,13 +178,13 @@ void heuristic_result_is_always_valid() {
         const size_t options   = 2 + static_cast<size_t>(trial % 2);
 
         pbqp::Graph graph;
-        ankerl::svector<pbqp::Cost, 4> values(options);
+        fe::Vector<pbqp::Cost, 4> values(options);
         for (size_t i = 0; i < num_nodes; ++i) {
             std::ranges::generate(values, next_cost);
             graph.add(values);
         }
 
-        ankerl::svector<pbqp::Cost, 4> matrix(options * options);
+        fe::Vector<pbqp::Cost, 4> matrix(options * options);
         for (size_t m = 0; m < num_nodes; ++m) {
             for (size_t n = m + 1; n < num_nodes; ++n) {
                 if (cost(random) < 5) continue; // roughly half the pairs
@@ -244,11 +244,11 @@ void infinite_sums_do_not_wrap() {
 
     // Three nodes and two colours make one monochromatic edge unavoidable, so the reduction sums several infinities.
     pbqp::Graph graph;
-    ankerl::svector<pbqp::NodeId, 4> nodes;
+    fe::Vector<pbqp::NodeId, 4> nodes;
     for (int i = 0; i < 3; ++i)
         nodes.emplace_back(graph.add({0, 0}));
 
-    const ankerl::svector<pbqp::Cost, 4> interference = {
+    const fe::Vector<pbqp::Cost, 4> interference = {
         infinity,
         0,
         0,
@@ -334,7 +334,7 @@ void heuristic_handles_forbidden_options_on_dense_graphs() {
 
 struct IntervalInstance {
     pbqp::Graph graph;
-    ankerl::svector<size_t, 8> peo_position;
+    fe::Vector<size_t, 8> peo_position;
 };
 
 /// Interval graphs are chordal, so k = maximum overlap registers always suffice; affinities add coalescing costs.
@@ -344,7 +344,7 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t num_no
     std::uniform_int_distribution<int> weight{1, 100};
     std::uniform_int_distribution<int> percent{0, 99};
 
-    ankerl::svector<std::pair<int, int>, 8> intervals;
+    fe::Vector<std::pair<int, int>, 8> intervals;
     for (size_t i = 0; i < num_nodes; ++i) {
         const int begin = start(random);
         intervals.emplace_back(begin, begin + length(random));
@@ -376,7 +376,7 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t num_no
     }
 
     // The interval that ends first is simplicial among the remaining ones.
-    ankerl::svector<size_t, 8> order(num_nodes);
+    fe::Vector<size_t, 8> order(num_nodes);
     std::ranges::iota(order, size_t{0});
     std::ranges::sort(order, [&](size_t a, size_t b) { return intervals[a].second < intervals[b].second; });
     instance.peo_position.resize(num_nodes);
@@ -521,13 +521,13 @@ void parallel_exhaustive_matches_sequential() {
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     pbqp::Graph graph;
-    ankerl::svector<pbqp::Cost, 4> values(3);
+    fe::Vector<pbqp::Cost, 4> values(3);
     for (size_t i = 0; i < 6; ++i) {
         std::ranges::generate(values, next_cost);
         graph.add(values);
     }
 
-    ankerl::svector<pbqp::Cost, 4> matrix(9);
+    fe::Vector<pbqp::Cost, 4> matrix(9);
     for (size_t m = 0; m < 6; ++m) {
         for (size_t n = m + 1; n < 6; ++n) {
             if (cost(random) < 5) continue;
@@ -548,8 +548,8 @@ void wide_option_vectors_stay_exact() {
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     for (const auto options : {size_t{17}, size_t{33}}) {
-        ankerl::svector<pbqp::Cost, 4> values(options);
-        ankerl::svector<pbqp::Cost, 4> matrix(options * options);
+        fe::Vector<pbqp::Cost, 4> values(options);
+        fe::Vector<pbqp::Cost, 4> matrix(options * options);
 
         // A single edge exercises RI with a wide row.
         pbqp::Graph pair;
@@ -563,7 +563,7 @@ void wide_option_vectors_stay_exact() {
 
         // A triangle has no low-degree node, so RII contracts a wide matrix.
         pbqp::Graph triangle;
-        ankerl::svector<pbqp::NodeId, 4> nodes;
+        fe::Vector<pbqp::NodeId, 4> nodes;
         for (int i = 0; i < 3; ++i) {
             std::ranges::generate(values, next_cost);
             nodes.emplace_back(triangle.add(values));
@@ -582,13 +582,13 @@ void concurrent_solves_share_a_graph() {
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     pbqp::Graph graph;
-    ankerl::svector<pbqp::Cost, 4> values(2);
+    fe::Vector<pbqp::Cost, 4> values(2);
     for (size_t i = 0; i < 7; ++i) {
         std::ranges::generate(values, next_cost);
         graph.add(values);
     }
 
-    ankerl::svector<pbqp::Cost, 4> matrix(4);
+    fe::Vector<pbqp::Cost, 4> matrix(4);
     for (size_t m = 0; m < 7; ++m) {
         for (size_t n = m + 1; n < 7; ++n) {
             if (cost(random) < 5) continue;
@@ -648,7 +648,7 @@ pbqp::Instance read_json(std::string_view text) {
     return pbqp::read_json(in);
 }
 
-std::string write_json(const pbqp::Graph& graph, std::span<const size_t> rn_priority = {}) {
+std::string write_json(const pbqp::Graph& graph, fe::View<size_t> rn_priority = {}) {
     std::ostringstream out;
     pbqp::write_json(out, graph, rn_priority);
     return out.str();

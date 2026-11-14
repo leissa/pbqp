@@ -406,7 +406,7 @@ private:
         for (const auto& node : nodes_)
             num_ids = std::max(num_ids, node.index.value + 1);
 
-        std::vector<const NodeData*> by_id(num_ids, nullptr);
+        fe::Vector<const NodeData*> by_id(num_ids, nullptr);
         for (const auto& node : nodes_)
             if (auto& slot = by_id[node.index.value])
                 error()
@@ -472,12 +472,12 @@ private:
     }
 
     Lexer lexer_;
-    std::vector<NodeData> nodes_;
-    std::vector<EdgeData> edges_;
-    std::vector<Field> peo_;
+    fe::Vector<NodeData> nodes_;
+    fe::Vector<EdgeData> edges_;
+    fe::Vector<Field> peo_;
 };
 
-void write_costs(std::ostream& out, std::span<const Cost> costs) {
+void write_costs(std::ostream& out, fe::View<Cost> costs) {
     out << '[';
     for (size_t i = 0; i < costs.size(); ++i) {
         if (i != 0) out << ", ";
@@ -503,7 +503,7 @@ Instance read_json(std::istream& in, const std::filesystem::path& path) {
     return instance;
 }
 
-void write_json(std::ostream& out, const Graph& graph, std::span<const size_t> rn_priority) {
+void write_json(std::ostream& out, const Graph& graph, fe::View<size_t> rn_priority) {
     for ([[maybe_unused]] const auto n : graph.nodes())
         assert((rn_priority.empty() || n < rn_priority.size()) && "write_json: rn_priority must cover every node id");
 
@@ -534,7 +534,8 @@ void write_json(std::ostream& out, const Graph& graph, std::span<const size_t> r
     std::print(out, "\n  ]");
 
     if (!rn_priority.empty()) {
-        std::vector<NodeId> peo(std::from_range, graph.nodes());
+        auto nodes = graph.nodes();
+        fe::Vector<NodeId> peo(nodes.begin(), nodes.end());
         std::ranges::stable_sort(peo, std::ranges::greater{}, [&](NodeId n) { return rn_priority[n]; });
         std::print(out, ",\n  \"peo\": [");
         for (size_t i = 0; i < peo.size(); ++i)
