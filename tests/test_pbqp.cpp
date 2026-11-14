@@ -31,7 +31,7 @@ int failures = 0;
 
 void single_node_picks_cheapest_option() {
     pbqp::Graph graph;
-    const pbqp::NodeId n = graph.add_node({5, 1, 3});
+    const pbqp::NodeId n = graph.add({5, 1, 3});
 
     const pbqp::Solution solution = pbqp::solve(graph);
     CHECK(solution.choices[n] == 1);
@@ -40,8 +40,8 @@ void single_node_picks_cheapest_option() {
 
 void independent_nodes_are_independent() {
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({4, 2});
-    const pbqp::NodeId b = graph.add_node({7, 8, 6});
+    const pbqp::NodeId a = graph.add({4, 2});
+    const pbqp::NodeId b = graph.add({7, 8, 6});
 
     const pbqp::Solution solution = pbqp::solve(graph);
     CHECK(solution.choices[a] == 1);
@@ -52,8 +52,8 @@ void independent_nodes_are_independent() {
 void edge_choice_trades_off_node_costs() {
     // The cheap option of `a` is expensive once the edge is paid for.
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({0, 1});
-    const pbqp::NodeId b = graph.add_node({1, 0});
+    const pbqp::NodeId a = graph.add({0, 1});
+    const pbqp::NodeId b = graph.add({1, 0});
     graph.link(a, b,
                {
                    10,
@@ -74,7 +74,7 @@ void triangle_with_conflicting_colours() {
     pbqp::Graph graph;
     ankerl::svector<pbqp::NodeId, 4> nodes;
     for (int i = 0; i < 3; ++i)
-        nodes.emplace_back(graph.add_node({0, 0}));
+        nodes.emplace_back(graph.add({0, 0}));
 
     const ankerl::svector<pbqp::Cost, 4> same_colour = {
         5,
@@ -106,7 +106,7 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
         for (size_t i = 0; i < node_count; ++i) {
             ankerl::svector<pbqp::Cost, 4> values(option_count(random));
             std::ranges::generate(values, next_cost);
-            graph.add_node(values);
+            graph.add(values);
         }
 
         for (pbqp::NodeId n = 1; n < node_count; ++n) {
@@ -128,13 +128,13 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
 
 void long_path_with_large_costs_stays_exact() {
     pbqp::Graph graph;
-    pbqp::NodeId previous = graph.add_node({4000, 4000});
+    pbqp::NodeId previous = graph.add({4000, 4000});
     for (int i = 0; i < 11; ++i) {
-        const pbqp::NodeId next = graph.add_node({4000, 4000});
+        const pbqp::NodeId next = graph.add({4000, 4000});
         graph.link(previous, next, {0, 50, 50, 0});
         previous = next;
     }
-    const pbqp::NodeId last = graph.add_node({100, 0});
+    const pbqp::NodeId last = graph.add({100, 0});
     graph.link(previous, last, {0, 50, 50, 0});
 
     CHECK(pbqp::solve(graph).cost == pbqp::solve_exhaustive(graph)->cost);
@@ -143,11 +143,11 @@ void long_path_with_large_costs_stays_exact() {
 void rn_charges_its_edges_to_the_neighbours() {
     // Dense instance found by search: without charging the RN rows to the neighbours the result is 51.
     pbqp::Graph graph;
-    graph.add_node({8, 1, 9});
-    graph.add_node({0, 4, 1});
-    graph.add_node({0, 6, 6});
-    graph.add_node({0, 9, 2});
-    graph.add_node({7, 0, 4});
+    graph.add({8, 1, 9});
+    graph.add({0, 4, 1});
+    graph.add({0, 6, 6});
+    graph.add({0, 9, 2});
+    graph.add({7, 0, 4});
     graph.link(0, 1, {8, 3, 9, 9, 4, 8, 6, 0, 3});
     graph.link(0, 2, {9, 1, 2, 9, 5, 0, 4, 3, 9});
     graph.link(0, 3, {4, 3, 4, 7, 7, 6, 0, 7, 9});
@@ -177,7 +177,7 @@ void heuristic_result_is_always_valid() {
         ankerl::svector<pbqp::Cost, 4> values(options);
         for (size_t i = 0; i < node_count; ++i) {
             std::ranges::generate(values, next_cost);
-            graph.add_node(values);
+            graph.add(values);
         }
 
         ankerl::svector<pbqp::Cost, 4> matrix(options * options);
@@ -200,8 +200,8 @@ void heuristic_result_is_always_valid() {
 
 void negative_costs_reward_coalescing() {
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({0, 0});
-    const pbqp::NodeId b = graph.add_node({0, 0});
+    const pbqp::NodeId a = graph.add({0, 0});
+    const pbqp::NodeId b = graph.add({0, 0});
     graph.link(a, b,
                {
                    -5,
@@ -219,8 +219,8 @@ void infinity_forbids_same_option() {
     constexpr auto infinity = std::numeric_limits<pbqp::Cost>::max();
 
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({0, 0});
-    const pbqp::NodeId b = graph.add_node({0, 0});
+    const pbqp::NodeId a = graph.add({0, 0});
+    const pbqp::NodeId b = graph.add({0, 0});
     graph.link(a, b,
                {
                    infinity,
@@ -242,7 +242,7 @@ void infinite_sums_do_not_wrap() {
     pbqp::Graph graph;
     ankerl::svector<pbqp::NodeId, 4> nodes;
     for (int i = 0; i < 3; ++i)
-        nodes.emplace_back(graph.add_node({0, 0}));
+        nodes.emplace_back(graph.add({0, 0}));
 
     const ankerl::svector<pbqp::Cost, 4> interference = {
         infinity,
@@ -275,7 +275,7 @@ pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t node_count, si
             for (size_t x = 0; x < values.size(); ++x)
                 if (x != kept) values[x] = pbqp::kInfinity;
         }
-        graph.add_node(values);
+        graph.add(values);
     }
     for (pbqp::NodeId m = 0; m < node_count; ++m) {
         for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
@@ -311,7 +311,7 @@ void heuristic_handles_forbidden_options_on_dense_graphs() {
         for (size_t i = 0; i < node_count; ++i) {
             pbqp::Costs values(option_count(random));
             std::ranges::generate(values, next_cost);
-            graph.add_node(values);
+            graph.add(values);
         }
         for (pbqp::NodeId m = 0; m < node_count; ++m) {
             for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
@@ -358,7 +358,7 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t node_c
 
     IntervalInstance instance;
     for (size_t i = 0; i < node_count; ++i)
-        instance.graph.add_node(pbqp::Costs(registers, 0));
+        instance.graph.add(pbqp::Costs(registers, 0));
     for (pbqp::NodeId m = 0; m < node_count; ++m) {
         for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
             const bool affinity = percent(random) < 15;
@@ -399,7 +399,7 @@ void statistics_count_every_node() {
 
     pbqp::Graph path;
     for (int i = 0; i < 5; ++i)
-        path.add_node({1, 2});
+        path.add({1, 2});
     for (pbqp::NodeId n = 1; n < 5; ++n)
         path.link(n - 1, n, {0, 3, 3, 0});
     const pbqp::Statistics path_stats = pbqp::solve(path).statistics;
@@ -410,7 +410,7 @@ void statistics_count_every_node() {
 void infeasible_instances_are_reported() {
     pbqp::Graph graph;
     for (int i = 0; i < 3; ++i)
-        graph.add_node({0, 0});
+        graph.add({0, 0});
     const pbqp::Costs interference = {pbqp::kInfinity, 0, 0, pbqp::kInfinity};
     for (pbqp::NodeId n = 0; n < 3; ++n)
         graph.link(n, (n + 1) % 3, interference);
@@ -421,12 +421,12 @@ void rm_merges_implied_neighbour() {
     // Figure 2 of Buchwald et al. 2011: coloring U implies V, and merging V into U leaves only exact reductions.
     constexpr auto inf = pbqp::kInfinity;
     pbqp::Graph graph;
-    const pbqp::NodeId u             = graph.add_node({0, 0});
-    const pbqp::NodeId v             = graph.add_node({0, 0});
-    const pbqp::NodeId w             = graph.add_node({0, 0, 0});
-    const pbqp::NodeId y             = graph.add_node({0, 0, 0});
-    const pbqp::NodeId a             = graph.add_node({0, 0, 0});
-    const pbqp::NodeId b             = graph.add_node({0, 0, 0});
+    const pbqp::NodeId u             = graph.add({0, 0});
+    const pbqp::NodeId v             = graph.add({0, 0});
+    const pbqp::NodeId w             = graph.add({0, 0, 0});
+    const pbqp::NodeId y             = graph.add({0, 0, 0});
+    const pbqp::NodeId a             = graph.add({0, 0, 0});
+    const pbqp::NodeId b             = graph.add({0, 0, 0});
     const pbqp::Costs interference33 = {inf, 0, 0, 0, inf, 0, 0, 0, inf};
     const pbqp::Costs affinity23     = {0, 1, 1, 1, 0, 1};
     graph.link(u, w, {inf, 0, 0, 0, inf, 0});
@@ -447,7 +447,7 @@ void rm_merges_implied_neighbour() {
 
 void evaluate_prices_an_assignment() {
     pbqp::Graph graph;
-    static_cast<void>(graph.add_node({1, 2}));
+    static_cast<void>(graph.add({1, 2}));
 
     CHECK(pbqp::evaluate(graph, pbqp::Choices{1}) == 2);
 }
@@ -455,15 +455,15 @@ void evaluate_prices_an_assignment() {
 void exhaustive_refuses_large_instances() {
     pbqp::Graph graph;
     for (int i = 0; i < 4; ++i)
-        graph.add_node({0, 1, 2});
+        graph.add({0, 1, 2});
     CHECK(!pbqp::solve_exhaustive(graph, 80).has_value());
     CHECK(pbqp::solve_exhaustive(graph, 81).has_value());
 }
 
 void find_edge_works_in_both_directions() {
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({1, 2});
-    const pbqp::NodeId b = graph.add_node({1, 2});
+    const pbqp::NodeId a = graph.add({1, 2});
+    const pbqp::NodeId b = graph.add({1, 2});
 
     graph.link(a, b, {0, 0, 0, 0});
     CHECK(graph.find_edge(a, b) != pbqp::Graph::npos);
@@ -472,8 +472,8 @@ void find_edge_works_in_both_directions() {
 
 void accessors_and_setters_round_trip() {
     pbqp::Graph graph;
-    const pbqp::NodeId m = graph.add_node({1, 2});
-    const pbqp::NodeId n = graph.add_node({3, 4, 5});
+    const pbqp::NodeId m = graph.add({1, 2});
+    const pbqp::NodeId n = graph.add({3, 4, 5});
     const pbqp::EdgeId e = graph.link(m, n, {0, 1, 2, 3, 4, 5});
 
     const auto [src, dst] = graph.edge(e);
@@ -491,14 +491,14 @@ void accessors_and_setters_round_trip() {
 void removal_keeps_ids_stable() {
     pbqp::Graph graph;
     for (int i = 0; i < 4; ++i)
-        graph.add_node({1, 2});
+        graph.add({1, 2});
     graph.link(0, 1, {0, 0, 0, 0});
     graph.link(1, 2, {0, 0, 0, 0});
 
     CHECK(graph.node_count() == 4);
     CHECK(graph.edge_count() == 2);
 
-    graph.remove_node(1);
+    graph.remove(1);
     CHECK(graph.has_node(0));
     CHECK(!graph.has_node(1));
     CHECK(graph.has_node(2));
@@ -520,7 +520,7 @@ void parallel_exhaustive_matches_sequential() {
     ankerl::svector<pbqp::Cost, 4> values(3);
     for (size_t i = 0; i < 6; ++i) {
         std::ranges::generate(values, next_cost);
-        graph.add_node(values);
+        graph.add(values);
     }
 
     ankerl::svector<pbqp::Cost, 4> matrix(9);
@@ -550,9 +550,9 @@ void wide_option_vectors_stay_exact() {
         // A single edge exercises RI with a wide row.
         pbqp::Graph pair;
         std::ranges::generate(values, next_cost);
-        const pbqp::NodeId a = pair.add_node(values);
+        const pbqp::NodeId a = pair.add(values);
         std::ranges::generate(values, next_cost);
-        const pbqp::NodeId b = pair.add_node(values);
+        const pbqp::NodeId b = pair.add(values);
         std::ranges::generate(matrix, next_cost);
         pair.link(a, b, matrix);
         CHECK(pbqp::solve(pair).cost == pbqp::solve_exhaustive(pair)->cost);
@@ -562,7 +562,7 @@ void wide_option_vectors_stay_exact() {
         ankerl::svector<pbqp::NodeId, 4> nodes;
         for (int i = 0; i < 3; ++i) {
             std::ranges::generate(values, next_cost);
-            nodes.emplace_back(triangle.add_node(values));
+            nodes.emplace_back(triangle.add(values));
         }
         for (size_t i = 0; i < nodes.size(); ++i) {
             std::ranges::generate(matrix, next_cost);
@@ -581,7 +581,7 @@ void concurrent_solves_share_a_graph() {
     ankerl::svector<pbqp::Cost, 4> values(2);
     for (size_t i = 0; i < 7; ++i) {
         std::ranges::generate(values, next_cost);
-        graph.add_node(values);
+        graph.add(values);
     }
 
     ankerl::svector<pbqp::Cost, 4> matrix(4);
@@ -618,9 +618,9 @@ void concurrent_solves_share_a_graph() {
 
 void dot_shows_costs_and_choices() {
     pbqp::Graph graph;
-    const pbqp::NodeId a = graph.add_node({3, 4});
-    const pbqp::NodeId b = graph.add_node({7});
-    graph.remove_node(graph.add_node({0}));
+    const pbqp::NodeId a = graph.add({3, 4});
+    const pbqp::NodeId b = graph.add({7});
+    graph.remove(graph.add({0}));
     graph.link(a, b, {pbqp::kInfinity, 5});
 
     std::ostringstream plain;

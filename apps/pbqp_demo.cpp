@@ -86,7 +86,7 @@ pbqp::Graph random_instance(const Settings& settings) {
     ankerl::svector<pbqp::Cost, 4> node_costs(settings.options);
     for (size_t i = 0; i < settings.nodes; ++i) {
         std::ranges::generate(node_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
-        graph.add_node(node_costs);
+        graph.add(node_costs);
     }
 
     const size_t max_edges = settings.nodes % 2 == 0 ? settings.nodes / 2 * (settings.nodes - 1)

@@ -6,7 +6,7 @@
 
 namespace pbqp {
 
-NodeId Graph::add_node(std::span<const Cost> costs) {
+NodeId Graph::add(std::span<const Cost> costs) {
     assert((!costs.empty()) && "add_node: a PBQP node needs at least one option");
     nodes_.emplace_back(Node{
         .costs = {costs.begin(), costs.end()},
@@ -36,7 +36,7 @@ EdgeId Graph::link(NodeId m, NodeId n, std::span<const Cost> costs) {
     return e;
 }
 
-void Graph::remove_edge(EdgeId e) {
+void Graph::unlink(EdgeId e) {
     assert((has_edge(e)) && "remove_edge: unknown edge");
 
     Edge& removed = edges_[e];
@@ -48,12 +48,12 @@ void Graph::remove_edge(EdgeId e) {
     }
 }
 
-void Graph::remove_node(NodeId n) {
+void Graph::remove(NodeId n) {
     assert((has_node(n)) && "remove_node: unknown node");
 
     const Adjacency incident = nodes_[n].edges;
     for (const auto e : incident)
-        remove_edge(e);
+        unlink(e);
     nodes_[n].alive = false;
     --live_nodes_;
 }

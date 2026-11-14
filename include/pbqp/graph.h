@@ -53,10 +53,8 @@ public:
     static constexpr EdgeId npos = static_cast<EdgeId>(-1);
 
     /// Add a node with the given cost vector. The vector must not be empty.
-    NodeId add_node(std::span<const Cost> costs);
-    NodeId add_node(std::initializer_list<Cost> costs) {
-        return add_node(std::span<const Cost>{costs.begin(), costs.size()});
-    }
+    NodeId add(std::span<const Cost> costs);
+    NodeId add(std::initializer_list<Cost> costs) { return add(std::span<const Cost>{costs.begin(), costs.size()}); }
 
     /// Link `m` and `n` with a row-major option_count(m) x option_count(n) matrix.
     /// Requires distinct nodes that are not linked yet.
@@ -65,8 +63,8 @@ public:
         return link(m, n, std::span<const Cost>{costs.begin(), costs.size()});
     }
 
-    void remove_edge(EdgeId e);
-    void remove_node(NodeId n);
+    void unlink(EdgeId e);
+    void remove(NodeId n);
 
     [[nodiscard]] bool has_node(NodeId n) const;
     [[nodiscard]] bool has_edge(EdgeId e) const;
