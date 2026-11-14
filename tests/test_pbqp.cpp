@@ -3,11 +3,14 @@
 
 #include <algorithm>
 #include <array>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -15,6 +18,7 @@
 
 #include "pbqp/dot.h"
 #include "pbqp/graph.h"
+#include "pbqp/json.h"
 #include "pbqp/solver.h"
 
 namespace {
@@ -639,7 +643,125 @@ void dot_shows_costs_and_choices() {
     CHECK(chosen.str().find(R"(<td bgcolor="palegreen">4</td>)") != std::string::npos);
 }
 
+pbqp::Instance read_json(std::string_view text) {
+    std::istringstream in{std::string(text)};
+    return pbqp::read_json(in);
+}
+
+std::string write_json(const pbqp::Graph& graph, std::span<const size_t> rn_priority = {}) {
+    std::ostringstream out;
+    pbqp::write_json(out, graph, rn_priority);
+    return out.str();
+}
+
+void json_round_trips_ids_infinity_and_priorities() {
+    pbqp::Graph graph;
+    const pbqp::NodeId a = graph.add({-3, pbqp::kInfinity});
+    graph.remove(graph.add({0}));
+    const pbqp::NodeId c = graph.add({7, 0, 2});
+    graph.link(c, a, {1, pbqp::kInfinity, -5, 0, 4, 2});
+    const std::array<size_t, 3> priority{5, 0, 9};
+
+    const std::string text        = write_json(graph, priority);
+    const pbqp::Instance instance = read_json(text);
+    CHECK(text.find(R"("inf")") != std::string::npos);
+    CHECK(text.find(R"("peo": [2, 0])") != std::string::npos);
+    CHECK(instance.graph.num_nodes() == 2);
+    CHECK(!instance.graph.has_node(1));
+    CHECK(std::ranges::equal(instance.graph.node_costs(a), graph.node_costs(a)));
+    CHECK(std::ranges::equal(instance.graph.node_costs(c), graph.node_costs(c)));
+    const pbqp::EdgeId e = instance.graph.find_edge(a, c);
+    CHECK(e != pbqp::Graph::npos && instance.graph.edge(e).src == c);
+    CHECK(std::ranges::equal(instance.graph.edge_costs(e), graph.edge_costs(graph.find_edge(a, c))));
+    CHECK(instance.rn_priority.size() == 3 && instance.rn_priority[c] > instance.rn_priority[a]);
+    CHECK(write_json(instance.graph, instance.rn_priority) == text);
+    CHECK(read_json(write_json(graph)).rn_priority.empty());
+}
+
+void json_reads_pbqp_papa_version_1() {
+    const pbqp::Instance instance = read_json(R"({
+        "edges": [{"columns": 2, "cost": ["\u221e", "0", "0", "INF"], "rows": 2, "source": 7, "target": 4}],
+        "meta": {"edgeCount": 1, "nodeCount": 2, "type": "INF unsigned int", "version": 1},
+        "nodes": [{"cost": ["0", "∞"], "index": 4, "degree": 1, "neighbours": ["7"]},
+                  {"cost": ["3", "2"], "index": 7, "extra": {"nested": [true, null, -1.5e3]}}],
+        "peo": [7, 4]
+    })");
+    const pbqp::Graph& graph      = instance.graph;
+    CHECK(graph.num_nodes() == 2 && graph.has_node(4) && graph.has_node(7));
+    CHECK(std::ranges::equal(graph.node_costs(4), std::array<pbqp::Cost, 2>{0, pbqp::kInfinity}));
+    const pbqp::EdgeId e = graph.find_edge(4, 7);
+    CHECK(e != pbqp::Graph::npos && graph.edge(e).src == 7);
+    CHECK(std::ranges::equal(graph.edge_costs(e), std::array<pbqp::Cost, 4>{pbqp::kInfinity, 0, 0, pbqp::kInfinity}));
+    CHECK(instance.rn_priority.size() == 8 && instance.rn_priority[7] > instance.rn_priority[4]);
+    CHECK(pbqp::solve(graph, instance.rn_priority).cost == 2);
+}
+
+void json_reports_malformed_input() {
+    const auto error = [](std::string_view text) -> std::string {
+        try {
+            (void)read_json(text);
+        } catch (const std::exception& e) { return e.what(); }
+        return {};
+    };
+    const auto rejects = [&](std::string_view text, std::string_view message) {
+        return error(text).find(message) != std::string::npos;
+    };
+
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [1]}]} #)", "invalid input character"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [1, 2.5]}]})", "expected cost, got"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": ["1)", "unterminated string"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [2147483647]}]})", "out of range"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": []}]})", "no options"));
+    CHECK(rejects(R"({"nodes": [{"cost": [0]}]})", "node without"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [true, 2147483648]}]})", "2 error(s)"));
+    CHECK(rejects(R"({"nodes": [{"index": 1, "cost": [0]}, {"index": 1, "cost": [0]}]})", "duplicate node 1"));
+    CHECK(rejects(R"({"meta": {"version": 3}, "nodes": []})", "unsupported version 3"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}], "edges": [{"source": 0, "target": 1, "cost": [0]}]})",
+                  "unknown node 1"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0, 0]}],
+                      "edges": [{"source": 0, "target": 1, "cost": [0]}]})",
+                  "expected 1 × 2 costs, got 1"));
+    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0]}], "peo": [0, 1, 0]})",
+                  "occurs twice"));
+}
+
 } // namespace
+
+void pbqp_papa_instances_are_solved_optimally() {
+    struct Case {
+        const char* file;
+        size_t nodes;
+        size_t edges;
+    };
+    for (const auto& [file, nodes, edges] : {
+             Case{"normalLibfirmGraph.json", 42, 31},
+             Case{ "smallLibfirmGraph.json", 42, 31},
+             Case{       "problematic.json", 45, 69},
+    }) {
+        std::ifstream in{std::string(PBQP_TEST_DATA) + "/" + file};
+        pbqp::Instance instance;
+        try {
+            instance = pbqp::read_json(in, file);
+        } catch (const std::exception& error) {
+            std::cerr << error.what();
+            CHECK(false);
+            continue;
+        }
+        const pbqp::Graph& graph = instance.graph;
+        CHECK(graph.num_nodes() == nodes);
+        CHECK(graph.num_edges() == edges);
+        CHECK(std::ranges::all_of(graph.nodes(), [&](pbqp::NodeId n) { return instance.rn_priority[n] != 0; }));
+
+        // Every cost in these instances is non-negative, so 0 is optimal.
+        const pbqp::Solution solution = pbqp::solve(graph, instance.rn_priority);
+        CHECK(solution.cost == 0);
+        CHECK(pbqp::evaluate(graph, solution.choices) == 0);
+
+        const std::string text    = write_json(graph, instance.rn_priority);
+        const pbqp::Instance back = read_json(text);
+        CHECK(write_json(back.graph, back.rn_priority) == text);
+    }
+}
 
 int main() {
     single_node_picks_cheapest_option();
@@ -671,6 +793,10 @@ int main() {
     wide_option_vectors_stay_exact();
     concurrent_solves_share_a_graph();
     dot_shows_costs_and_choices();
+    json_round_trips_ids_infinity_and_priorities();
+    json_reads_pbqp_papa_version_1();
+    json_reports_malformed_input();
+    pbqp_papa_instances_are_solved_optimally();
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed\n";

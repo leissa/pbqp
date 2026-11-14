@@ -16,6 +16,7 @@ endif()
 add_library(pbqp
     src/pbqp/dot.cpp
     src/pbqp/graph.cpp
+    src/pbqp/json.cpp
     src/pbqp/solver.cpp
 )
 add_library(pbqp::pbqp ALIAS pbqp)
@@ -46,7 +47,8 @@ if(MSVC)
         target_compile_options(pbqp PRIVATE /WX)
     endif()
 else()
-    target_compile_options(pbqp PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    target_compile_options(pbqp PRIVATE -Wall -Wextra -Wpedantic -Wconversion
+        $<IF:$<CXX_COMPILER_ID:GNU>,-Wshadow=local,-Wshadow>)
     if(PBQP_WARNINGS_AS_ERRORS)
         target_compile_options(pbqp PRIVATE -Werror)
     endif()
@@ -68,6 +70,7 @@ if(PBQP_BUILD_TESTS)
 
     add_executable(pbqp_tests tests/test_pbqp.cpp)
     target_link_libraries(pbqp_tests PRIVATE pbqp::pbqp)
+    target_compile_definitions(pbqp_tests PRIVATE PBQP_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
     add_test(NAME pbqp_tests COMMAND pbqp_tests)
 endif()

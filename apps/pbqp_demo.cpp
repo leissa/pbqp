@@ -1,4 +1,3 @@
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -6,17 +5,20 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <iostream>
 #include <print>
 #include <random>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include <ankerl/svector.h>
+#include <fe/cli.h>
+#include <fe/error.h>
 
 #include "pbqp/dot.h"
 #include "pbqp/graph.h"
+#include "pbqp/json.h"
 #include "pbqp/solver.h"
 
 namespace {
@@ -26,56 +28,15 @@ struct Settings {
     size_t options     = 4;
     size_t edges       = 24;
     std::uint64_t seed = 42;
+    std::string in;
+    std::string out;
     std::string dot;
 };
 
-void print_usage(std::string_view program) {
-    std::println("usage: {} [--nodes N] [--options K] [--edges E] [--seed S] [--dot FILE]", program);
-    std::println("  builds a random PBQP instance, solves it, and (for small instances)");
-    std::println("  compares the heuristic result against brute force");
-    std::println("  --dot writes the instance and the heuristic assignment as Graphviz DOT");
-}
-
-template<class T>
-T parse_number(std::string_view name, std::string_view text) {
-    T value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size())
-        throw std::invalid_argument(std::format("{} expects a non-negative integer, got '{}'", name, text));
-    return value;
-}
-
-Settings parse(int argc, char** argv) {
-    Settings settings;
-
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view argument = argv[i];
-        const auto next                 = [&](std::string_view name) {
-            if (i + 1 >= argc) throw std::invalid_argument(std::format("missing value for {}", name));
-            return argv[++i];
-        };
-
-        if (argument == "--nodes")
-            settings.nodes = parse_number<size_t>(argument, next(argument));
-        else if (argument == "--options")
-            settings.options = parse_number<size_t>(argument, next(argument));
-        else if (argument == "--edges")
-            settings.edges = parse_number<size_t>(argument, next(argument));
-        else if (argument == "--seed")
-            settings.seed = parse_number<std::uint64_t>(argument, next(argument));
-        else if (argument == "--dot")
-            settings.dot = next(argument);
-        else if (argument == "-h" || argument == "--help") {
-            print_usage(argv[0]);
-            std::exit(0);
-        } else {
-            throw std::invalid_argument(std::format("unknown argument: {}", argument));
-        }
-    }
-
-    if (settings.nodes == 0 || settings.options == 0)
-        throw std::invalid_argument("--nodes and --options must be positive");
-    return settings;
+pbqp::Instance read_instance(const std::string& path) {
+    std::ifstream in{path};
+    if (!in) throw std::runtime_error(std::format("cannot open '{}'", path));
+    return pbqp::read_json(in, path);
 }
 
 pbqp::Graph random_instance(const Settings& settings) {
@@ -134,14 +95,47 @@ void print_assignment(const pbqp::Graph& graph, const pbqp::Solution& solution) 
 } // namespace
 
 int main(int argc, char** argv) {
+    fe::term::resolve_mode();
+
     try {
-        const Settings settings = parse(argc, argv);
-        const pbqp::Graph graph = random_instance(settings);
+        bool show_help = false;
+        Settings settings;
 
-        std::println("instance : {} nodes, {} edges, {} options per node", graph.num_nodes(), graph.num_edges(),
-                     settings.options);
+        // clang-format off
+        auto cli = fe::Cli("pbqp_demo", "Solves a random or given PBQP instance and compares the heuristic against brute force on small ones.")
+            .help(show_help)
+            .grp("Random instance")
+            .opt(settings.nodes  , "num" , "", "--nodes"  , "Number of nodes.")
+            .opt(settings.options, "num" , "", "--options", "Options per node.")
+            .opt(settings.edges  , "num" , "", "--edges"  , "Number of edges; capped at a complete graph.")
+            .opt(settings.seed   , "num" , "", "--seed"   , "Seed of the random generator.")
+            .grp("Files")
+            .opt(settings.in     , "file", "", "--in"     , "Reads the instance from JSON instead.")
+            .opt(settings.out    , "file", "", "--out"    , "Writes the instance as JSON.")
+            .opt(settings.dot    , "file", "", "--dot"    , "Writes the instance and the heuristic assignment as Graphviz DOT.");
+        // clang-format on
 
-        const pbqp::Solution heuristic = pbqp::solve(graph);
+        if (auto err = cli.parse(argc, argv)) throw std::invalid_argument(*err);
+
+        if (show_help) {
+            std::cout << cli;
+            return EXIT_SUCCESS;
+        }
+
+        if (settings.nodes == 0 || settings.options == 0)
+            throw std::invalid_argument("--nodes and --options must be positive");
+
+        const pbqp::Instance instance
+            = settings.in.empty() ? pbqp::Instance{random_instance(settings), {}} : read_instance(settings.in);
+        const pbqp::Graph& graph = instance.graph;
+
+        if (settings.in.empty())
+            std::println("instance : {} nodes, {} edges, {} options per node", graph.num_nodes(), graph.num_edges(),
+                         settings.options);
+        else
+            std::println("instance : {} nodes, {} edges from {}", graph.num_nodes(), graph.num_edges(), settings.in);
+
+        const pbqp::Solution heuristic = pbqp::solve(graph, instance.rn_priority);
         std::println("heuristic: cost {}", heuristic.cost);
         const pbqp::Statistics& stats = heuristic.statistics;
         std::println(
@@ -164,14 +158,23 @@ int main(int argc, char** argv) {
 
         print_assignment(graph, heuristic);
 
+        if (!settings.out.empty()) {
+            std::ofstream out{settings.out};
+            if (!out) throw std::runtime_error(std::format("cannot open '{}'", settings.out));
+            pbqp::write_json(out, graph, instance.rn_priority);
+        }
+
         if (!settings.dot.empty()) {
             std::ofstream dot{settings.dot};
             if (!dot) throw std::runtime_error(std::format("cannot open '{}'", settings.dot));
             pbqp::write_dot(dot, graph, heuristic.choices);
         }
-        return 0;
+        return EXIT_SUCCESS;
+    } catch (const fe::Error::Bail& bail) {
+        std::cerr << bail;
+        return EXIT_FAILURE;
     } catch (const std::exception& error) {
         std::println(stderr, "error: {}", error.what());
-        return 1;
+        return EXIT_FAILURE;
     }
 }
