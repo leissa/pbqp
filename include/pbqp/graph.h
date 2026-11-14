@@ -28,8 +28,8 @@ inline constexpr Cost kInfinity       = std::numeric_limits<Cost>::max();
 inline constexpr CostSum kInfiniteSum = std::numeric_limits<CostSum>::max();
 
 /// PBQP vectors and matrices are small, so they live inline.
-using Costs     = ankerl::svector<Cost, 4>;
-using Adjacency = ankerl::svector<EdgeId, 4>;
+using Costs = ankerl::svector<Cost, 4>;
+using Edges = ankerl::svector<EdgeId, 4>;
 /// One option per live node, indexed by node id.
 using Choices = ankerl::svector<OptionIndex, 8>;
 
@@ -38,7 +38,7 @@ using Choices = ankerl::svector<OptionIndex, 8>;
 /// Every node carries a cost vector with one entry per option. Every edge
 /// carries a cost matrix indexed by the options of its endpoints:
 ///
-///     costs[src_option * option_count(dst) + dst_option]
+///     costs[src_option * num_options(dst) + dst_option]
 ///
 /// The total cost of an assignment `x` is
 ///
@@ -56,7 +56,7 @@ public:
     NodeId add(std::span<const Cost> costs);
     NodeId add(std::initializer_list<Cost> costs) { return add(std::span<const Cost>{costs.begin(), costs.size()}); }
 
-    /// Link `m` and `n` with a row-major option_count(m) x option_count(n) matrix.
+    /// Link `m` and `n` with a row-major num_options(m) x num_options(n) matrix.
     /// Requires distinct nodes that are not linked yet.
     EdgeId link(NodeId m, NodeId n, std::span<const Cost> costs);
     EdgeId link(NodeId m, NodeId n, std::initializer_list<Cost> costs) {
@@ -71,7 +71,7 @@ public:
 
     [[nodiscard]] std::span<const Cost> node_costs(NodeId n) const;
     [[nodiscard]] std::span<const EdgeId> incident_edges(NodeId n) const;
-    [[nodiscard]] size_t option_count(NodeId n) const { return node_costs(n).size(); }
+    [[nodiscard]] size_t num_options(NodeId n) const { return node_costs(n).size(); }
 
     struct Endpoints {
         NodeId src = 0;
@@ -103,13 +103,13 @@ public:
              | std::views::filter([this](EdgeId e) { return has_edge(e); });
     }
 
-    [[nodiscard]] size_t node_count() const { return live_nodes_; }
-    [[nodiscard]] size_t edge_count() const { return live_edges_; }
+    [[nodiscard]] size_t num_nodes() const { return live_nodes_; }
+    [[nodiscard]] size_t num_edges() const { return live_edges_; }
 
 private:
     struct Node {
         Costs costs;
-        Adjacency edges; // incident live edges, no duplicates
+        Edges edges; // incident live edges, no duplicates
         bool alive = true;
     };
 

@@ -41,12 +41,12 @@ void write_dot(std::ostream& out, const Graph& graph, std::span<const OptionInde
 
     for (const auto e : graph.edges()) {
         const auto [src, dst] = graph.edge(e);
-        const size_t columns  = graph.option_count(dst);
+        const size_t columns  = graph.num_options(dst);
         std::print(
             out,
             R"(    n{} -- n{} [label=<<table border="0" cellborder="1" cellspacing="0"><tr><td colspan="{}">n{} &#215; n{}</td></tr>)",
             src, dst, columns, src, dst);
-        for (OptionIndex i = 0; i < graph.option_count(src); ++i) {
+        for (OptionIndex i = 0; i < graph.num_options(src); ++i) {
             std::print(out, "<tr>");
             for (OptionIndex j = 0; j < columns; ++j)
                 print_cell(out, graph.edge_cost(e, i, j), highlight && choices[src] == i && choices[dst] == j);

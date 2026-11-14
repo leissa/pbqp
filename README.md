@@ -88,7 +88,7 @@ ordinary rewards (register-allocation affinity edges).
 
 `solve` returns a feasible assignment plus its cost under the original graph.
 `solve_exhaustive` computes the true optimum for tiny instances, splitting the
-search space across `thread_count` threads (0 = hardware concurrency).
+search space across `num_threads` threads (0 = hardware concurrency).
 `evaluate` prices any assignment you already have.
 
 All solver functions are safe to call concurrently on a shared graph; a graph

@@ -49,9 +49,9 @@ struct Solution {
 [[nodiscard]] Solution solve(const Graph& graph, std::span<const size_t> rn_priority = {});
 
 /// Brute-force optimum, useful to cross-check small instances.
-/// The search space is split across `thread_count` threads (0 = hardware concurrency).
+/// The search space is split across `num_threads` threads (0 = hardware concurrency).
 /// Returns nothing if there are more than `max_combinations` candidate assignments.
 [[nodiscard]] std::optional<Solution>
-solve_exhaustive(const Graph& graph, size_t max_combinations = 10'000'000, unsigned thread_count = 0);
+solve_exhaustive(const Graph& graph, size_t max_combinations = 10'000'000, unsigned num_threads = 0);
 
 } // namespace pbqp

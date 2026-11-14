@@ -21,7 +21,7 @@ EdgeId Graph::link(NodeId m, NodeId n, std::span<const Cost> costs) {
     assert((has_node(m) && has_node(n)) && "link: unknown node");
     assert((m != n) && "link: self edges are not supported, fold them into the node cost vector instead");
     assert((find_edge(m, n) == npos) && "link: an edge between these nodes already exists, merge the matrices instead");
-    assert((costs.size() == option_count(m) * option_count(n)) && "link: cost matrix has the wrong size");
+    assert((costs.size() == num_options(m) * num_options(n)) && "link: cost matrix has the wrong size");
 
     edges_.emplace_back(Edge{
         .src   = m,
@@ -51,7 +51,7 @@ void Graph::unlink(EdgeId e) {
 void Graph::remove(NodeId n) {
     assert((has_node(n)) && "remove_node: unknown node");
 
-    const Adjacency incident = nodes_[n].edges;
+    const Edges incident = nodes_[n].edges;
     for (const auto e : incident)
         unlink(e);
     nodes_[n].alive = false;
@@ -84,7 +84,7 @@ Graph::Endpoints Graph::edge(EdgeId e) const {
 std::span<const Cost> Graph::edge_costs(EdgeId e) const { return checked_edge(e).costs; }
 
 void Graph::set_node_costs(NodeId n, std::span<const Cost> costs) {
-    assert((costs.size() == option_count(n)) && "set_node_costs: option count must not change");
+    assert((costs.size() == num_options(n)) && "set_node_costs: option count must not change");
     std::ranges::copy(costs, nodes_[n].costs.begin());
 }
 
@@ -95,7 +95,7 @@ void Graph::set_edge_costs(EdgeId e, std::span<const Cost> costs) {
 
 Cost Graph::edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) const {
     const Edge& edge = checked_edge(e);
-    return edge.costs[src_option * option_count(edge.dst) + dst_option];
+    return edge.costs[src_option * num_options(edge.dst) + dst_option];
 }
 
 EdgeId Graph::find_edge(NodeId m, NodeId n) const {

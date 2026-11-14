@@ -111,7 +111,7 @@ pbqp::Graph random_instance(const Settings& settings) {
     } else {
         // At most half of all pairs are taken, so rejection sampling needs fewer than two draws per edge.
         std::uniform_int_distribution<pbqp::NodeId> node{0, settings.nodes - 1};
-        while (graph.edge_count() < edges) {
+        while (graph.num_edges() < edges) {
             const pbqp::NodeId m = node(random);
             const pbqp::NodeId n = node(random);
             if (m != n && graph.find_edge(m, n) == pbqp::Graph::npos) link(m, n);
@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
         const Settings settings = parse(argc, argv);
         const pbqp::Graph graph = random_instance(settings);
 
-        std::println("instance : {} nodes, {} edges, {} options per node", graph.node_count(), graph.edge_count(),
+        std::println("instance : {} nodes, {} edges, {} options per node", graph.num_nodes(), graph.num_edges(),
                      settings.options);
 
         const pbqp::Solution heuristic = pbqp::solve(graph);

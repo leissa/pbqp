@@ -95,23 +95,23 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
     std::mt19937_64 random{7};
     std::uniform_int_distribution<int> cost{min_cost, max_cost};
     std::uniform_int_distribution<int> percent{0, 99};
-    std::uniform_int_distribution<size_t> option_count{1, 4};
+    std::uniform_int_distribution<size_t> num_options{1, 4};
     const auto next_cost
         = [&] { return percent(random) < forbidden_percent ? pbqp::kInfinity : static_cast<pbqp::Cost>(cost(random)); };
 
     for (int trial = 0; trial < 200; ++trial) {
-        const size_t node_count = 2 + static_cast<size_t>(trial % 7);
+        const size_t num_nodes = 2 + static_cast<size_t>(trial % 7);
 
         pbqp::Graph graph;
-        for (size_t i = 0; i < node_count; ++i) {
-            ankerl::svector<pbqp::Cost, 4> values(option_count(random));
+        for (size_t i = 0; i < num_nodes; ++i) {
+            ankerl::svector<pbqp::Cost, 4> values(num_options(random));
             std::ranges::generate(values, next_cost);
             graph.add(values);
         }
 
-        for (pbqp::NodeId n = 1; n < node_count; ++n) {
+        for (pbqp::NodeId n = 1; n < num_nodes; ++n) {
             const pbqp::NodeId m = std::uniform_int_distribution<size_t>{0, n - 1}(random);
-            ankerl::svector<pbqp::Cost, 4> matrix(graph.option_count(m) * graph.option_count(n));
+            ankerl::svector<pbqp::Cost, 4> matrix(graph.num_options(m) * graph.num_options(n));
             std::ranges::generate(matrix, next_cost);
             if (cost(random) % 2 == 0)
                 graph.link(m, n, matrix);
@@ -170,19 +170,19 @@ void heuristic_result_is_always_valid() {
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     for (int trial = 0; trial < 40; ++trial) {
-        const size_t node_count = 3 + static_cast<size_t>(trial % 5);
-        const size_t options    = 2 + static_cast<size_t>(trial % 2);
+        const size_t num_nodes = 3 + static_cast<size_t>(trial % 5);
+        const size_t options   = 2 + static_cast<size_t>(trial % 2);
 
         pbqp::Graph graph;
         ankerl::svector<pbqp::Cost, 4> values(options);
-        for (size_t i = 0; i < node_count; ++i) {
+        for (size_t i = 0; i < num_nodes; ++i) {
             std::ranges::generate(values, next_cost);
             graph.add(values);
         }
 
         ankerl::svector<pbqp::Cost, 4> matrix(options * options);
-        for (size_t m = 0; m < node_count; ++m) {
-            for (size_t n = m + 1; n < node_count; ++n) {
+        for (size_t m = 0; m < num_nodes; ++m) {
+            for (size_t n = m + 1; n < num_nodes; ++n) {
                 if (cost(random) < 5) continue; // roughly half the pairs
                 std::ranges::generate(matrix, next_cost);
                 graph.link(m, n, matrix);
@@ -192,7 +192,7 @@ void heuristic_result_is_always_valid() {
         const pbqp::Solution heuristic = pbqp::solve(graph);
         const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph);
 
-        CHECK(heuristic.choices.size() == node_count);
+        CHECK(heuristic.choices.size() == num_nodes);
         CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
         CHECK(heuristic.cost >= optimal.cost);
     }
@@ -261,14 +261,14 @@ void infinite_sums_do_not_wrap() {
 }
 
 /// Complete graph whose nodes all keep one option after pruning, except for `free_nodes`, which then form a tree.
-pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t node_count, size_t free_nodes) {
+pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t num_nodes, size_t free_nodes) {
     std::uniform_int_distribution<int> cost{0, 10};
-    std::uniform_int_distribution<size_t> option_count{2, 4};
+    std::uniform_int_distribution<size_t> num_options{2, 4};
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     pbqp::Graph graph;
-    for (size_t i = 0; i < node_count; ++i) {
-        pbqp::Costs values(option_count(random));
+    for (size_t i = 0; i < num_nodes; ++i) {
+        pbqp::Costs values(num_options(random));
         std::ranges::generate(values, next_cost);
         if (i >= free_nodes) {
             const size_t kept = std::uniform_int_distribution<size_t>{0, values.size() - 1}(random);
@@ -277,9 +277,9 @@ pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t node_count, si
         }
         graph.add(values);
     }
-    for (pbqp::NodeId m = 0; m < node_count; ++m) {
-        for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
-            pbqp::Costs matrix(graph.option_count(m) * graph.option_count(n));
+    for (pbqp::NodeId m = 0; m < num_nodes; ++m) {
+        for (pbqp::NodeId n = m + 1; n < num_nodes; ++n) {
+            pbqp::Costs matrix(graph.num_options(m) * graph.num_options(n));
             std::ranges::generate(matrix, next_cost);
             graph.link(m, n, matrix);
         }
@@ -301,22 +301,22 @@ void heuristic_handles_forbidden_options_on_dense_graphs() {
     std::mt19937_64 random{59};
     std::uniform_int_distribution<int> cost{0, 10};
     std::uniform_int_distribution<int> percent{0, 99};
-    std::uniform_int_distribution<size_t> option_count{1, 4};
+    std::uniform_int_distribution<size_t> num_options{1, 4};
     const auto next_cost
         = [&] { return percent(random) < 25 ? pbqp::kInfinity : static_cast<pbqp::Cost>(cost(random)); };
 
     for (int trial = 0; trial < 200; ++trial) {
-        const size_t node_count = 4 + static_cast<size_t>(trial % 4);
+        const size_t num_nodes = 4 + static_cast<size_t>(trial % 4);
         pbqp::Graph graph;
-        for (size_t i = 0; i < node_count; ++i) {
-            pbqp::Costs values(option_count(random));
+        for (size_t i = 0; i < num_nodes; ++i) {
+            pbqp::Costs values(num_options(random));
             std::ranges::generate(values, next_cost);
             graph.add(values);
         }
-        for (pbqp::NodeId m = 0; m < node_count; ++m) {
-            for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
+        for (pbqp::NodeId m = 0; m < num_nodes; ++m) {
+            for (pbqp::NodeId n = m + 1; n < num_nodes; ++n) {
                 if (percent(random) < 30) continue;
-                pbqp::Costs matrix(graph.option_count(m) * graph.option_count(n));
+                pbqp::Costs matrix(graph.num_options(m) * graph.num_options(n));
                 std::ranges::generate(matrix, next_cost);
                 graph.link(m, n, matrix);
             }
@@ -334,14 +334,14 @@ struct IntervalInstance {
 };
 
 /// Interval graphs are chordal, so k = maximum overlap registers always suffice; affinities add coalescing costs.
-IntervalInstance random_interval_instance(std::mt19937_64& random, size_t node_count) {
+IntervalInstance random_interval_instance(std::mt19937_64& random, size_t num_nodes) {
     std::uniform_int_distribution<int> start{0, 40};
     std::uniform_int_distribution<int> length{1, 12};
     std::uniform_int_distribution<int> weight{1, 100};
     std::uniform_int_distribution<int> percent{0, 99};
 
     ankerl::svector<std::pair<int, int>, 8> intervals;
-    for (size_t i = 0; i < node_count; ++i) {
+    for (size_t i = 0; i < num_nodes; ++i) {
         const int begin = start(random);
         intervals.emplace_back(begin, begin + length(random));
     }
@@ -357,10 +357,10 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t node_c
     }
 
     IntervalInstance instance;
-    for (size_t i = 0; i < node_count; ++i)
+    for (size_t i = 0; i < num_nodes; ++i)
         instance.graph.add(pbqp::Costs(registers, 0));
-    for (pbqp::NodeId m = 0; m < node_count; ++m) {
-        for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
+    for (pbqp::NodeId m = 0; m < num_nodes; ++m) {
+        for (pbqp::NodeId n = m + 1; n < num_nodes; ++n) {
             const bool affinity = percent(random) < 15;
             if (!interferes(m, n) && !affinity) continue;
             const pbqp::Cost copy = affinity ? static_cast<pbqp::Cost>(weight(random)) : 0;
@@ -372,11 +372,11 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t node_c
     }
 
     // The interval that ends first is simplicial among the remaining ones.
-    ankerl::svector<size_t, 8> order(node_count);
+    ankerl::svector<size_t, 8> order(num_nodes);
     std::ranges::iota(order, size_t{0});
     std::ranges::sort(order, [&](size_t a, size_t b) { return intervals[a].second < intervals[b].second; });
-    instance.peo_position.resize(node_count);
-    for (size_t i = 0; i < node_count; ++i)
+    instance.peo_position.resize(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i)
         instance.peo_position[order[i]] = i;
     return instance;
 }
@@ -395,7 +395,7 @@ void statistics_count_every_node() {
     std::mt19937_64 random{67};
     const IntervalInstance instance = random_interval_instance(random, 30);
     const pbqp::Statistics stats    = pbqp::solve(instance.graph, instance.peo_position).statistics;
-    CHECK(stats.r0 + stats.r1 + stats.r2 + stats.rn + stats.single_option == instance.graph.node_count());
+    CHECK(stats.r0 + stats.r1 + stats.r2 + stats.rn + stats.single_option == instance.graph.num_nodes());
 
     pbqp::Graph path;
     for (int i = 0; i < 5; ++i)
@@ -495,16 +495,16 @@ void removal_keeps_ids_stable() {
     graph.link(0, 1, {0, 0, 0, 0});
     graph.link(1, 2, {0, 0, 0, 0});
 
-    CHECK(graph.node_count() == 4);
-    CHECK(graph.edge_count() == 2);
+    CHECK(graph.num_nodes() == 4);
+    CHECK(graph.num_edges() == 2);
 
     graph.remove(1);
     CHECK(graph.has_node(0));
     CHECK(!graph.has_node(1));
     CHECK(graph.has_node(2));
     CHECK(graph.has_node(3));
-    CHECK(graph.node_count() == 3);
-    CHECK(graph.edge_count() == 0);
+    CHECK(graph.num_nodes() == 3);
+    CHECK(graph.num_edges() == 0);
     CHECK(graph.find_edge(0, 2) == pbqp::Graph::npos);
 
     const pbqp::Solution solution = pbqp::solve(graph);
@@ -596,12 +596,12 @@ void concurrent_solves_share_a_graph() {
     const pbqp::Solution heuristic = pbqp::solve(graph);
     const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph, 1'000'000, 1);
 
-    constexpr size_t thread_count = 4;
-    std::array<pbqp::Solution, thread_count> heuristics;
-    std::array<pbqp::Solution, thread_count> optima;
-    std::array<std::thread, thread_count> workers;
+    constexpr size_t num_threads = 4;
+    std::array<pbqp::Solution, num_threads> heuristics;
+    std::array<pbqp::Solution, num_threads> optima;
+    std::array<std::thread, num_threads> workers;
 
-    for (size_t i = 0; i < thread_count; ++i) {
+    for (size_t i = 0; i < num_threads; ++i) {
         workers[i] = std::thread([&, i] {
             heuristics[i] = pbqp::solve(graph);
             optima[i]     = *pbqp::solve_exhaustive(graph, 1'000'000, 2);
@@ -610,7 +610,7 @@ void concurrent_solves_share_a_graph() {
     for (auto& worker : workers)
         worker.join();
 
-    for (size_t i = 0; i < thread_count; ++i) {
+    for (size_t i = 0; i < num_threads; ++i) {
         CHECK(heuristics[i].cost == heuristic.cost);
         CHECK(optima[i].choices == optimal.choices);
     }

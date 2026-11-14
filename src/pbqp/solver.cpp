@@ -181,7 +181,7 @@ private:
     struct Node {
         Vector costs;
         ankerl::svector<OptionIndex, 4> original; // original[working option]
-        Adjacency edges;
+        Edges edges;
         size_t original_options = 0;
         size_t version          = 0;
         bool alive              = false;
@@ -311,7 +311,7 @@ private:
         }
         if (!changed) return;
 
-        const Adjacency incident = nodes_[n].edges;
+        const Edges incident = nodes_[n].edges;
         for (const auto e : incident)
             normalize_edge(e);
         normalize_node(n);
@@ -367,7 +367,7 @@ private:
             const NodeId other = edges_[e].src == n ? edges_[e].dst : edges_[e].src;
             erase(nodes_[other].edges, e);
         }
-        const Adjacency incident = std::move(node.edges);
+        const Edges incident = std::move(node.edges);
         node.edges.clear();
         node.alive = false;
         for (const auto e : incident)
@@ -465,7 +465,7 @@ private:
             const auto implied = implied_options(e, n);
             if (!implied) continue;
 
-            const Adjacency moved = nodes_[m].edges;
+            const Edges moved = nodes_[m].edges;
             for (const auto f : moved) {
                 if (f == e) continue;
                 const NodeId w         = other_end(f, m);
@@ -553,7 +553,7 @@ CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
     }
     for (const auto e : graph.edges()) {
         const auto [src, dst] = graph.edge(e);
-        total = add_sums(total, widen(graph.edge_costs(e)[choices[src] * graph.option_count(dst) + choices[dst]]));
+        total = add_sums(total, widen(graph.edge_costs(e)[choices[src] * graph.num_options(dst) + choices[dst]]));
     }
     return total;
 }
@@ -561,7 +561,7 @@ CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
 Solution solve(const Graph& graph, std::span<const size_t> rn_priority) {
     Reducer reducer{graph, rn_priority};
     std::vector<Reduction> stack;
-    stack.reserve(graph.node_count());
+    stack.reserve(graph.num_nodes());
 
     for (NodeId n = reducer.next(); n != Graph::npos; n = reducer.next())
         reducer.reduce(n, stack);
@@ -589,7 +589,7 @@ std::optional<Enumeration> make_enumeration(const Graph& graph, size_t max_combi
     Enumeration enumeration;
     for (const auto n : graph.nodes()) {
         enumeration.nodes.emplace_back(n);
-        enumeration.options.emplace_back(graph.option_count(n));
+        enumeration.options.emplace_back(graph.num_options(n));
     }
     if (enumeration.nodes.empty()) return enumeration;
 
@@ -642,13 +642,13 @@ BestAssignment search_range(const Graph& graph, const Enumeration& enumeration, 
 
 } // namespace
 
-std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinations, unsigned thread_count) {
+std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinations, unsigned num_threads) {
     const auto made = make_enumeration(graph, max_combinations);
     if (!made) return std::nullopt;
     const Enumeration& enumeration = *made;
     if (enumeration.nodes.empty()) return Solution{};
 
-    unsigned requested = thread_count;
+    unsigned requested = num_threads;
     if (requested == 0) requested = std::thread::hardware_concurrency();
     if (requested == 0) requested = 1;
     const size_t workers = std::min<size_t>(requested, enumeration.combinations);
