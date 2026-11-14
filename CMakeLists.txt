@@ -35,6 +35,9 @@ target_include_directories(pbqp PUBLIC
 )
 target_compile_features(pbqp PUBLIC cxx_std_23)
 target_link_libraries(pbqp PUBLIC Threads::Threads fe)
+if(MSVC AND NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(pbqp PUBLIC FE_STATIC_DEFINE)
+endif()
 set_target_properties(pbqp PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
