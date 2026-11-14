@@ -104,6 +104,12 @@ public:
 private:
     using MatrixId = size_t;
 
+    /// Keys are already avalanched, so this hash only has to stop ankerl from mixing them again.
+    struct Prehashed {
+        using is_avalanching = void;
+        size_t operator()(size_t hash) const noexcept { return hash; }
+    };
+
     struct Matrix {
         Costs costs;
         size_t hash   = 0;
@@ -133,7 +139,7 @@ private:
     fe::Bitset node_mask_;
     fe::Bitset edge_mask_;
     fe::Vector<Matrix, 2> matrices_;
-    ankerl::unordered_dense::map<size_t, MatrixId> hash2matrix_;
+    ankerl::unordered_dense::map<size_t, MatrixId, Prehashed> hash2matrix_;
     MatrixId free_matrix_ = npos;
     size_t num_matrices_  = 0;
 };
