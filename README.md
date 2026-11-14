@@ -35,16 +35,16 @@ src/pbqp/solver.cpp         reduction-based heuristic
 src/pbqp/dot.cpp            DOT writer
 apps/pbqp_demo.cpp          random instance generator and CLI
 tests/test_pbqp.cpp         test binary (CTest)
-submodules/                 git submodules: svector (used), doctest, unordered_dense
+submodules/fe               git submodule (FE), which vendors svector, unordered_dense and doctest
 ```
 
 Small vectors (cost vectors, matrices, adjacency, solver snapshots) use
-`ankerl::svector` from `submodules/svector`; the public headers depend on it, and
-`pbqp::pbqp` exports its include directory.
+`ankerl::svector`, which the public headers get through the `fe` submodule;
+`pbqp::pbqp` links `fe` and exports its include directories.
 
 ## Build and run
 
-After cloning, initialize the submodules: `git submodule update --init`.
+After cloning, initialize the submodules: `git submodule update --init --recursive`.
 
 ```sh
 cmake --preset debug

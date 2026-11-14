@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.29)
 
 project(pbqp VERSION 0.1.0 LANGUAGES CXX)
 
@@ -22,19 +22,18 @@ add_library(pbqp::pbqp ALIAS pbqp)
 
 find_package(Threads REQUIRED)
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/submodules/svector/include/ankerl/svector.h")
-    message(FATAL_ERROR "submodules are missing; run `git submodule update --init`")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/submodules/fe/CMakeLists.txt")
+    message(FATAL_ERROR "submodules are missing; run `git submodule update --init --recursive`")
 endif()
+
+add_subdirectory(submodules/fe)
 
 target_include_directories(pbqp PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_include_directories(pbqp SYSTEM PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/submodules/svector/include>
-)
 target_compile_features(pbqp PUBLIC cxx_std_23)
-target_link_libraries(pbqp PUBLIC Threads::Threads)
+target_link_libraries(pbqp PUBLIC Threads::Threads fe)
 set_target_properties(pbqp PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON

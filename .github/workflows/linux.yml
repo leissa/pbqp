@@ -19,7 +19,7 @@ jobs:
         with:
           submodules: recursive
 
-      # svector's C++23 range members need gcc-15's libstdc++, which ubuntu-24.04 lacks.
+      # FE's C++23 range members need gcc-15's libstdc++, which ubuntu-24.04 lacks.
       - name: Install dependencies
         run: |
           sudo apt-get update

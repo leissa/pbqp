@@ -5,6 +5,7 @@
 
 #include <initializer_list>
 #include <limits>
+#include <numeric>
 #include <ranges>
 #include <span>
 
