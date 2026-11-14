@@ -75,7 +75,7 @@ pbqp::Graph random_instance(const Settings& settings) {
         while (graph.num_edges() < edges) {
             const pbqp::NodeId m = node(random);
             const pbqp::NodeId n = node(random);
-            if (m != n && graph.find_edge(m, n) == pbqp::Graph::npos) link(m, n);
+            if (m != n && graph.edge(m, n) == pbqp::Graph::npos) link(m, n);
         }
     }
     return graph;

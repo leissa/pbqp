@@ -16,7 +16,7 @@ NodeId Graph::add(fe::View<Cost> costs) {
         .costs = {costs.begin(), costs.end()},
         .edges = {}
     });
-    const NodeId n = nodes_.size() - 1;
+    auto n = nodes_.size() - 1;
     node_mask_.set(n);
     return n;
 }
@@ -24,11 +24,11 @@ NodeId Graph::add(fe::View<Cost> costs) {
 EdgeId Graph::link(NodeId m, NodeId n, fe::View<Cost> costs) {
     assert((has_node(m) && has_node(n)) && "link: unknown node");
     assert((m != n) && "link: self edges are not supported, fold them into the node cost vector instead");
-    assert((find_edge(m, n) == npos) && "link: an edge between these nodes already exists, merge the matrices instead");
+    assert((edge(m, n) == npos) && "link: an edge between these nodes already exists, merge the matrices instead");
     assert((costs.size() == num_options(m) * num_options(n)) && "link: cost matrix has the wrong size");
 
     edges_.emplace_back(Edge{.src = m, .dst = n, .matrix = intern(costs)});
-    const EdgeId e = edges_.size() - 1;
+    auto e = edges_.size() - 1;
     nodes_[m].edges.emplace_back(e);
     nodes_[n].edges.emplace_back(e);
     edge_mask_.set(e);
@@ -36,7 +36,7 @@ EdgeId Graph::link(NodeId m, NodeId n, fe::View<Cost> costs) {
 }
 
 EdgeId Graph::add_edge_costs(NodeId m, NodeId n, fe::View<Cost> costs) {
-    const EdgeId e = find_edge(m, n);
+    const EdgeId e = edge(m, n);
     if (e == npos) return link(m, n, costs);
     assert((costs.size() == num_options(m) * num_options(n)) && "add_edge_costs: cost matrix has the wrong size");
 
@@ -117,7 +117,7 @@ Cost Graph::edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) 
     return matrices_[edge.matrix].costs[src_option * num_options(edge.dst) + dst_option];
 }
 
-EdgeId Graph::find_edge(NodeId m, NodeId n) const {
+EdgeId Graph::edge(NodeId m, NodeId n) const {
     assert((has_node(m) && has_node(n)) && "find_edge: unknown node");
     if (nodes_[n].edges.size() < nodes_[m].edges.size()) std::swap(m, n);
     for (const auto e : nodes_[m].edges) {

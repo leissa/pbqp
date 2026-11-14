@@ -432,7 +432,7 @@ private:
                 error().e(edge.loc, "self-edge on node {}", src);
                 continue;
             }
-            if (graph.find_edge(src, dst) != Graph::npos) {
+            if (graph.edge(src, dst) != Graph::npos) {
                 error().e(edge.loc, "duplicate edge between nodes {} and {}", src, dst);
                 continue;
             }

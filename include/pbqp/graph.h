@@ -90,7 +90,7 @@ public:
     [[nodiscard]] Cost edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) const;
 
     /// The edge between `m` and `n`, or npos.
-    [[nodiscard]] EdgeId find_edge(NodeId m, NodeId n) const;
+    [[nodiscard]] EdgeId edge(NodeId m, NodeId n) const;
 
     /// Ids of live nodes and edges in ascending order.
     [[nodiscard]] const fe::Bitset& nodes() const { return node_mask_; }

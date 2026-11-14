@@ -450,7 +450,7 @@ void add_edge_costs_accumulates_in_either_direction() {
     const pbqp::NodeId n = graph.add({0, 0, 0});
 
     const pbqp::EdgeId e = graph.add_edge_costs(m, n, {1, 2, 3, 4, 5, 6});
-    CHECK(graph.find_edge(m, n) == e);
+    CHECK(graph.edge(m, n) == e);
     CHECK(graph.add_edge_costs(m, n, {10, 0, 0, 0, 0, pbqp::kInfinity}) == e);
     CHECK(graph.add_edge_costs(n, m, {0, 100, -2, 0, 0, 0}) == e);
     CHECK(graph.num_edges() == 1);
@@ -513,8 +513,8 @@ void find_edge_works_in_both_directions() {
     const pbqp::NodeId b = graph.add({1, 2});
 
     graph.link(a, b, {0, 0, 0, 0});
-    CHECK(graph.find_edge(a, b) != pbqp::Graph::npos);
-    CHECK(graph.find_edge(b, a) != pbqp::Graph::npos);
+    CHECK(graph.edge(a, b) != pbqp::Graph::npos);
+    CHECK(graph.edge(b, a) != pbqp::Graph::npos);
 }
 
 void accessors_and_setters_round_trip() {
@@ -589,7 +589,7 @@ void shared_matrices_survive_random_mutations() {
         const pbqp::NodeId n = node(random);
         if (m == n) continue;
         const pbqp::Costs& costs = palette[static_cast<size_t>(pick(random))];
-        const pbqp::EdgeId e     = graph.find_edge(m, n);
+        const pbqp::EdgeId e     = graph.edge(m, n);
         switch (pick(random)) {
             case 0:
                 if (e != pbqp::Graph::npos) graph.unlink(e);
@@ -644,7 +644,7 @@ void removal_keeps_ids_stable() {
     CHECK(graph.has_node(3));
     CHECK(graph.num_nodes() == 3);
     CHECK(graph.num_edges() == 0);
-    CHECK(graph.find_edge(0, 2) == pbqp::Graph::npos);
+    CHECK(graph.edge(0, 2) == pbqp::Graph::npos);
 
     const pbqp::Solution solution = pbqp::solve(graph);
     CHECK(solution.cost == 3);
@@ -805,9 +805,9 @@ void json_round_trips_ids_infinity_and_priorities() {
     CHECK(!instance.graph.has_node(1));
     CHECK(std::ranges::equal(instance.graph.node_costs(a), graph.node_costs(a)));
     CHECK(std::ranges::equal(instance.graph.node_costs(c), graph.node_costs(c)));
-    const pbqp::EdgeId e = instance.graph.find_edge(a, c);
+    const pbqp::EdgeId e = instance.graph.edge(a, c);
     CHECK(e != pbqp::Graph::npos && instance.graph.edge(e).src == c);
-    CHECK(std::ranges::equal(instance.graph.edge_costs(e), graph.edge_costs(graph.find_edge(a, c))));
+    CHECK(std::ranges::equal(instance.graph.edge_costs(e), graph.edge_costs(graph.edge(a, c))));
     CHECK(instance.rn_priority.size() == 3 && instance.rn_priority[c] > instance.rn_priority[a]);
     CHECK(write_json(instance.graph, instance.rn_priority) == text);
     CHECK(read_json(write_json(graph)).rn_priority.empty());
@@ -824,7 +824,7 @@ void json_reads_pbqp_papa_version_1() {
     const pbqp::Graph& graph      = instance.graph;
     CHECK(graph.num_nodes() == 2 && graph.has_node(4) && graph.has_node(7));
     CHECK(std::ranges::equal(graph.node_costs(4), std::array<pbqp::Cost, 2>{0, pbqp::kInfinity}));
-    const pbqp::EdgeId e = graph.find_edge(4, 7);
+    const pbqp::EdgeId e = graph.edge(4, 7);
     CHECK(e != pbqp::Graph::npos && graph.edge(e).src == 7);
     CHECK(std::ranges::equal(graph.edge_costs(e), std::array<pbqp::Cost, 4>{pbqp::kInfinity, 0, 0, pbqp::kInfinity}));
     CHECK(instance.rn_priority.size() == 8 && instance.rn_priority[7] > instance.rn_priority[4]);
