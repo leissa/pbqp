@@ -70,10 +70,9 @@ const pbqp::Solution solution = pbqp::solve(graph);
 ```
 
 Costs are `pbqp::Cost` (`std::int16_t`) and totals are `pbqp::CostSum`
-(`std::int64_t`). Intermediate sums saturate at the `Cost` limits, so
-`std::numeric_limits<pbqp::Cost>::max()` works as "forbidden" as long as
-feasible costs stay far below it. Negative entries are ordinary rewards
-(register-allocation affinity edges).
+(`std::int64_t`). `pbqp::kInfinity` forbids an option or option pair: any
+assignment that uses one costs `pbqp::kInfiniteSum`. Negative entries are
+ordinary rewards (register-allocation affinity edges).
 
 `solve` returns a feasible assignment plus its cost under the original graph.
 `solve_exhaustive` computes the true optimum for tiny instances, splitting the
@@ -94,22 +93,40 @@ reconstructed in reverse order:
 | 0      | pick the cheapest option | yes |
 | 1      | RI: fold the edge into the neighbour | yes |
 | 2      | RII: contract the node onto its two neighbours | yes |
-| 3+     | RN: remove the node, decide its option during back-substitution | no |
+| any, 1 option | fold the single option into the neighbours | yes |
+| 3+     | RN: commit to the locally best option and charge its edges to the neighbours | no |
 
 Because RI/RII are exact, the heuristic is optimal on trees. On graphs with
 cycles a local heuristic (`rn_score`, the cost spread per incident edge) decides
-which node is reduced with RN; the option itself is then chosen greedily from
-the final choices of its neighbours.
+which node is reduced with RN. Degree-bucketed worklists keep node selection
+cheap, so reduction scales roughly linearly with the graph size.
+
+Before and during reduction the solver normalizes its working copy: matrix
+row and column minima move into the node vectors, node vectors are shifted to
+a minimum of 0, and edges whose matrix becomes all zero are dropped. Costs
+therefore stay small and relative, so 16-bit arithmetic saturates only when
+option costs really differ by `kInfinity`, and dropped edges lower degrees.
+
+Whenever a node's costs change, the solver also deletes its forbidden
+(`kInfinity`) options. Nodes left with a single option are then reduced exactly
+regardless of their degree. Back-substitution maps the remaining options back to
+their original indices.
 
 Graph ids are stable and removing a node/edge simply leaves a hole, so no
 index bookkeeping is required while reducing.
 
-The RI/RII kernels add and minimise 16-bit costs with saturating SIMD:
-AVX-512BW or AVX2 is picked at runtime on x86, NEON on ARM, and a portable
-scalar loop covers everything else.
+The reduction kernels are plain 16-bit add/min loops that the compiler
+vectorizes; on x86 ELF targets `target_clones` adds x86-64-v4 (AVX-512BW) and
+AVX2 variants that are picked at runtime.
 
 ## Ideas for what to add
 
+- Revisit option dominance: option `a` of `v` can be deleted exactly if
+  `c(a) - c(b) >= sum_u max_y (M_u(b, y) - M_u(a, y))`. A first version helped
+  little on random graphs (about 0.25% lower cost) but was 2.5-5x slower, and
+  caching per-edge tables did not help because normalization keeps changing the
+  edges. It may pay off on real instruction-selection graphs, ideally with a
+  degree cap or as an opt-in.
 - Better RN ordering (Briggs et al.), R0/R1 lookahead, or a simple local-search
   improvement after back-substitution.
 - Merge parallel matrix edges internally (already handled) and add an

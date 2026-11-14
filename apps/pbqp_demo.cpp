@@ -1,13 +1,13 @@
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 
 #include <algorithm>
 #include <format>
-#include <iostream>
+#include <print>
 #include <random>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -26,9 +26,18 @@ struct Settings {
 };
 
 void print_usage(std::string_view program) {
-    std::cout << std::format("usage: {} [--nodes N] [--options K] [--edges E] [--seed S]\n", program)
-              << "  builds a random PBQP instance, solves it, and (for small instances)\n"
-              << "  compares the heuristic result against brute force\n";
+    std::println("usage: {} [--nodes N] [--options K] [--edges E] [--seed S]", program);
+    std::println("  builds a random PBQP instance, solves it, and (for small instances)");
+    std::println("  compares the heuristic result against brute force");
+}
+
+template<class T>
+T parse_number(std::string_view name, std::string_view text) {
+    T value{};
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size())
+        throw std::invalid_argument(std::format("{} expects a non-negative integer, got '{}'", name, text));
+    return value;
 }
 
 Settings parse(int argc, char** argv) {
@@ -42,13 +51,13 @@ Settings parse(int argc, char** argv) {
         };
 
         if (argument == "--nodes")
-            settings.nodes = std::stoul(next(argument));
+            settings.nodes = parse_number<size_t>(argument, next(argument));
         else if (argument == "--options")
-            settings.options = std::stoul(next(argument));
+            settings.options = parse_number<size_t>(argument, next(argument));
         else if (argument == "--edges")
-            settings.edges = std::stoul(next(argument));
+            settings.edges = parse_number<size_t>(argument, next(argument));
         else if (argument == "--seed")
-            settings.seed = std::stoull(next(argument));
+            settings.seed = parse_number<std::uint64_t>(argument, next(argument));
         else if (argument == "-h" || argument == "--help") {
             print_usage(argv[0]);
             std::exit(0);
@@ -73,30 +82,46 @@ pbqp::Graph random_instance(const Settings& settings) {
         graph.add_node(node_costs);
     }
 
-    ankerl::svector<std::pair<pbqp::NodeId, pbqp::NodeId>, 8> pairs;
-    pairs.reserve(settings.nodes * (settings.nodes - 1) / 2);
-    for (pbqp::NodeId u = 0; u < settings.nodes; ++u)
-        for (pbqp::NodeId v = u + 1; v < settings.nodes; ++v)
-            pairs.emplace_back(u, v);
-    std::ranges::shuffle(pairs, random);
+    const size_t max_edges = settings.nodes % 2 == 0 ? settings.nodes / 2 * (settings.nodes - 1)
+                                                     : (settings.nodes - 1) / 2 * settings.nodes;
+    const size_t edges     = std::min(settings.edges, max_edges);
 
     ankerl::svector<pbqp::Cost, 4> edge_costs(settings.options * settings.options);
-    for (size_t i = 0; i < std::min(settings.edges, pairs.size()); ++i) {
+    const auto link = [&](pbqp::NodeId m, pbqp::NodeId n) {
         std::ranges::generate(edge_costs, [&] { return static_cast<pbqp::Cost>(cost(random)); });
-        graph.link(pairs[i].first, pairs[i].second, edge_costs);
+        graph.link(m, n, edge_costs);
+    };
+
+    if (2 * edges > max_edges) {
+        ankerl::svector<std::pair<pbqp::NodeId, pbqp::NodeId>, 8> pairs;
+        pairs.reserve(max_edges);
+        for (pbqp::NodeId m = 0; m < settings.nodes; ++m)
+            for (pbqp::NodeId n = m + 1; n < settings.nodes; ++n)
+                pairs.emplace_back(m, n);
+        std::ranges::shuffle(pairs, random);
+        for (size_t i = 0; i < edges; ++i)
+            link(pairs[i].first, pairs[i].second);
+    } else {
+        // At most half of all pairs are taken, so rejection sampling needs fewer than two draws per edge.
+        std::uniform_int_distribution<pbqp::NodeId> node{0, settings.nodes - 1};
+        while (graph.edge_count() < edges) {
+            const pbqp::NodeId m = node(random);
+            const pbqp::NodeId n = node(random);
+            if (m != n && graph.find_edge(m, n) == pbqp::Graph::npos) link(m, n);
+        }
     }
     return graph;
 }
 
 void print_assignment(const pbqp::Graph& graph, const pbqp::Solution& solution) {
-    std::cout << "assignment:";
+    std::print("assignment:");
     size_t column = 0;
-    for (const pbqp::NodeId v : graph.nodes()) {
-        if (column != 0 && column % 10 == 0) std::cout << "\n           ";
-        std::cout << std::format(" v{}={}", v, solution.choices[v]);
+    for (const auto n : graph.nodes()) {
+        if (column != 0 && column % 10 == 0) std::print("\n           ");
+        std::print(" n{}={}", n, solution.choices[n]);
         ++column;
     }
-    std::cout << '\n';
+    std::println();
 }
 
 } // namespace
@@ -106,28 +131,28 @@ int main(int argc, char** argv) {
         const Settings settings = parse(argc, argv);
         const pbqp::Graph graph = random_instance(settings);
 
-        std::cout << std::format("instance : {} nodes, {} edges, {} options per node\n", graph.node_count(),
-                                 graph.edge_count(), settings.options);
+        std::println("instance : {} nodes, {} edges, {} options per node", graph.node_count(), graph.edge_count(),
+                     settings.options);
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
-        std::cout << std::format("heuristic: cost {}\n", heuristic.cost);
+        std::println("heuristic: cost {}", heuristic.cost);
 
         try {
             const pbqp::Solution optimal = pbqp::solve_exhaustive(graph, 2'000'000);
-            std::cout << std::format("brute    : cost {}", optimal.cost);
+            std::print("brute    : cost {}", optimal.cost);
             if (heuristic.cost == optimal.cost) {
-                std::cout << "  (heuristic matches the optimum)\n";
+                std::println("  (heuristic matches the optimum)");
             } else {
                 const auto gap       = static_cast<double>(heuristic.cost - optimal.cost);
                 const double percent = 100.0 * gap / static_cast<double>(std::max<pbqp::CostSum>(optimal.cost, 1));
-                std::cout << std::format("  (heuristic is {:.1f}% above the optimum)\n", percent);
+                std::println("  (heuristic is {:.1f}% above the optimum)", percent);
             }
-        } catch (const std::runtime_error&) { std::cout << "brute    : skipped, instance too large for brute force\n"; }
+        } catch (const std::runtime_error&) { std::println("brute    : skipped, instance too large for brute force"); }
 
         print_assignment(graph, heuristic);
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << std::format("error: {}\n", error.what());
+        std::println(stderr, "error: {}", error.what());
         return 1;
     }
 }

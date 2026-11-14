@@ -10,7 +10,7 @@ namespace pbqp {
 
 /// A complete assignment of options to nodes.
 struct Solution {
-    /// choices[v] is the option chosen for node `v`.
+    /// choices[n] is the option chosen for node `n`.
     Choices choices;
     /// Total cost of the assignment under the original graph.
     CostSum cost = 0;
@@ -19,17 +19,15 @@ struct Solution {
 /// All solver functions are safe to call concurrently on the same graph; a
 /// Graph must not be mutated while another thread reads it.
 ///
-/// Cost of `choices` under `graph`: cost vector entries for nodes, matrix
-/// entries for edges. Throws std::invalid_argument if `choices` is too short
-/// or contains an out-of-range option.
+/// Cost of `choices` under `graph`, or kInfiniteSum if it picks a kInfinity entry.
+/// Throws std::invalid_argument if `choices` is too short or contains an out-of-range option.
 [[nodiscard]] CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices);
 
 /// Heuristic PBQP solver.
 ///
-/// Repeatedly reduces the graph - degree 0 (pick the cheapest option),
-/// degree 1 (RI) and degree 2 (RII) - and falls back to RN for higher-degree
-/// nodes, then reconstructs a solution in reverse reduction order. RI and RII
-/// are exact, RN is a heuristic, so the result is exact on trees.
+/// Reduces degree 0, 1 (RI) and 2 (RII) nodes exactly and higher-degree nodes with the RN heuristic.
+/// Normalization keeps intermediate costs relative, so they saturate only where option costs differ by kInfinity.
+/// Short of that, the result is optimal whenever no RN step is needed, e.g. on trees.
 [[nodiscard]] Solution solve(const Graph& graph);
 
 /// Brute-force optimum, useful to cross-check small instances. The search

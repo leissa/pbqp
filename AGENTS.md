@@ -27,9 +27,9 @@ Warnings are on (`-Wall -Wextra -Wpedantic -Wconversion -Wshadow`) and the build
 - `include/pbqp/` public headers; `src/pbqp/` implementations, mirroring the include tree.
 - `apps/` demo CLI, `tests/` dependency-free CTest binary.
 - `submodules/svector` is a public dependency (`ankerl::svector`) exported by `pbqp::pbqp`.
-- `Graph` stores cost vectors/matrices with stable ids and at most one edge per node pair; `Cost` is `std::int16_t` with saturating sums, `CostSum` totals are `std::int64_t`.
-- `solve` applies RI/RII exactly and RN heuristically, then back-substitutes in reverse reduction order; `solve_exhaustive` is the reference for tiny instances.
-- RI/RII kernels use saturating `int16` SIMD with runtime AVX-512BW/AVX2 dispatch on x86, NEON on ARM, and a scalar fallback.
+- `Graph` stores cost vectors/matrices with stable ids and at most one edge per node pair; storage stays private (read-only spans, `edge(e)` endpoints, `set_node_costs`/`set_edge_costs`) so matrices can later be hash-consed; `Cost` is `std::int16_t`, `CostSum` totals are `std::int64_t`; `kInfinity` marks forbidden entries and makes any total `kInfiniteSum`.
+- `solve` reduces a normalized `int16` working copy (non-negative, saturating at `kInfinity`, all-zero edges dropped) with degree-bucketed worklists: forbidden options are deleted (tracked back to original indices), single-option nodes and RI/RII are reduced exactly, RN commits to the locally best option; it back-substitutes in reverse reduction order. `solve_exhaustive` is the reference for tiny instances.
+- Reduction kernels are plain 16-bit add/min loops that the compiler vectorizes; on x86 ELF `target_clones` adds x86-64-v4/AVX2 runtime dispatch (off under ThreadSanitizer).
 
 ## Comments
 
