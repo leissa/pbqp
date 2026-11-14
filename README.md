@@ -1,5 +1,12 @@
 # pbqp
 
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue?style=flat-square&logo=cplusplus)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
+[![License](https://img.shields.io/github/license/leissa/pbqp?style=flat-square&color=blue&logo=opensourceinitiative&logoColor=white&label=License)](https://github.com/leissa/pbqp/blob/master/LICENSE)
+
+[![Linux](https://img.shields.io/github/actions/workflow/status/leissa/pbqp/linux.yml?style=flat-square&logo=linux&label=Linux&logoColor=white&branch=master)](https://github.com/leissa/pbqp/actions/workflows/linux.yml?query=branch%3Amaster)
+[![macOS](https://img.shields.io/github/actions/workflow/status/leissa/pbqp/macos.yml?style=flat-square&logo=apple&label=macOS&branch=master)](https://github.com/leissa/pbqp/actions/workflows/macos.yml?query=branch%3Amaster)
+[![Windows](https://img.shields.io/github/actions/workflow/status/leissa/pbqp/windows.yml?style=flat-square&label=⊞%20Windows&branch=master)](https://github.com/leissa/pbqp/actions/workflows/windows.yml?query=branch%3Amaster)
+
 A small, dependency-free starting point for a [PBQP](https://en.wikipedia.org/wiki/Partitioned_Boolean_Quadratic_Programming)
 (Partitioned Boolean Quadratic Programming) solver in C++23.
 
@@ -69,7 +76,7 @@ const pbqp::Solution solution = pbqp::solve(graph);
 // solution.choices[a], solution.choices[b], solution.cost
 ```
 
-Costs are `pbqp::Cost` (`std::int16_t`) and totals are `pbqp::CostSum`
+Costs are `pbqp::Cost` (`std::int32_t`) and totals are `pbqp::CostSum`
 (`std::int64_t`). `pbqp::kInfinity` forbids an option or option pair: any
 assignment that uses one costs `pbqp::kInfiniteSum`. Negative entries are
 ordinary rewards (register-allocation affinity edges).
@@ -95,6 +102,7 @@ reconstructed in reverse order:
 | 2      | RII: contract the node onto its two neighbours | yes |
 | any, 1 option | fold the single option into the neighbours | yes |
 | 3+     | RN: commit to the locally best option and charge its edges to the neighbours | no |
+| 3+, before RN | RM: merge a neighbour whose option is implied, then R1 it | yes |
 
 Because RI/RII are exact, the heuristic is optimal on trees. On graphs with
 cycles a local heuristic (`rn_score`, the cost spread per incident edge) decides
@@ -104,7 +112,7 @@ cheap, so reduction scales roughly linearly with the graph size.
 Before and during reduction the solver normalizes its working copy: matrix
 row and column minima move into the node vectors, node vectors are shifted to
 a minimum of 0, and edges whose matrix becomes all zero are dropped. Costs
-therefore stay small and relative, so 16-bit arithmetic saturates only when
+therefore stay small and relative, so 32-bit arithmetic saturates only when
 option costs really differ by `kInfinity`, and dropped edges lower degrees.
 
 Whenever a node's costs change, the solver also deletes its forbidden
@@ -112,11 +120,20 @@ Whenever a node's costs change, the solver also deletes its forbidden
 regardless of their degree. Back-substitution maps the remaining options back to
 their original indices.
 
+`solve` takes an optional `rn_priority` per node: among the nodes that need RN,
+the highest priority is decided first. For SSA-based register allocation pass
+each node's position in a perfect elimination order of the interference graph;
+the exact reductions keep that order valid, so coloring cannot fail
+(Buchwald, Zwinkau, Bersch: *SSA-based Register Allocation with PBQP*, CC 2011).
+Without priorities RN falls back to degree and cost spread.
+`Solution::feasible()` reports whether the assignment avoids every `kInfinity`
+entry, and `Solution::statistics` counts each kind of reduction.
+
 Graph ids are stable and removing a node/edge simply leaves a hole, so no
 index bookkeeping is required while reducing.
 
-The reduction kernels are plain 16-bit add/min loops that the compiler
-vectorizes; on x86 ELF targets `target_clones` adds x86-64-v4 (AVX-512BW) and
+The reduction kernels are plain 32-bit add/min loops that the compiler
+vectorizes; on x86 ELF targets `target_clones` adds x86-64-v4 (AVX-512) and
 AVX2 variants that are picked at runtime.
 
 ## Ideas for what to add

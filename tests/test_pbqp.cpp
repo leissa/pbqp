@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <array>
-#include <exception>
 #include <iostream>
 #include <limits>
 #include <random>
@@ -25,18 +24,6 @@ int failures = 0;
             std::cerr << __FILE__ << ':' << __LINE__ << ": CHECK failed: " #condition "\n"; \
             ++failures;                                                                     \
         }                                                                                   \
-    } while (false)
-
-#define CHECK_THROWS(expression)                                                                          \
-    do {                                                                                                  \
-        bool threw = false;                                                                               \
-        try {                                                                                             \
-            static_cast<void>(expression);                                                                \
-        } catch (const std::exception&) { threw = true; }                                                 \
-        if (!threw) {                                                                                     \
-            std::cerr << __FILE__ << ':' << __LINE__ << ": expected an exception from " #expression "\n"; \
-            ++failures;                                                                                   \
-        }                                                                                                 \
     } while (false)
 
 void single_node_picks_cheapest_option() {
@@ -130,7 +117,7 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
         }
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
-        const pbqp::Solution optimal   = pbqp::solve_exhaustive(graph);
+        const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph);
         CHECK(heuristic.cost == optimal.cost);
         CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
     }
@@ -147,7 +134,7 @@ void long_path_with_large_costs_stays_exact() {
     const pbqp::NodeId last = graph.add_node({100, 0});
     graph.link(previous, last, {0, 50, 50, 0});
 
-    CHECK(pbqp::solve(graph).cost == pbqp::solve_exhaustive(graph).cost);
+    CHECK(pbqp::solve(graph).cost == pbqp::solve_exhaustive(graph)->cost);
 }
 
 void rn_charges_its_edges_to_the_neighbours() {
@@ -200,7 +187,7 @@ void heuristic_result_is_always_valid() {
         }
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
-        const pbqp::Solution optimal   = pbqp::solve_exhaustive(graph);
+        const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph);
 
         CHECK(heuristic.choices.size() == node_count);
         CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
@@ -264,7 +251,7 @@ void infinite_sums_do_not_wrap() {
         graph.link(nodes[i], nodes[(i + 1) % nodes.size()], interference);
 
     const pbqp::Solution heuristic = pbqp::solve(graph);
-    const pbqp::Solution optimal   = pbqp::solve_exhaustive(graph);
+    const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph);
     CHECK(heuristic.cost == optimal.cost);
     CHECK(heuristic.cost == pbqp::kInfiniteSum);
     CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
@@ -302,7 +289,7 @@ void pruning_makes_dense_graphs_exact() {
     for (int trial = 0; trial < 100; ++trial) {
         const pbqp::Graph graph        = pruned_complete_graph(random, 6, 2);
         const pbqp::Solution heuristic = pbqp::solve(graph);
-        CHECK(heuristic.cost == pbqp::solve_exhaustive(graph).cost);
+        CHECK(heuristic.cost == pbqp::solve_exhaustive(graph)->cost);
         CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
     }
 }
@@ -334,29 +321,148 @@ void heuristic_handles_forbidden_options_on_dense_graphs() {
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
         CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
-        CHECK(heuristic.cost >= pbqp::solve_exhaustive(graph).cost);
+        CHECK(heuristic.cost >= pbqp::solve_exhaustive(graph)->cost);
     }
 }
 
-void evaluate_rejects_bad_assignments() {
+struct IntervalInstance {
+    pbqp::Graph graph;
+    ankerl::svector<size_t, 8> peo_position;
+};
+
+/// Interval graphs are chordal, so k = maximum overlap registers always suffice; affinities add coalescing costs.
+IntervalInstance random_interval_instance(std::mt19937_64& random, size_t node_count) {
+    std::uniform_int_distribution<int> start{0, 40};
+    std::uniform_int_distribution<int> length{1, 12};
+    std::uniform_int_distribution<int> weight{1, 100};
+    std::uniform_int_distribution<int> percent{0, 99};
+
+    ankerl::svector<std::pair<int, int>, 8> intervals;
+    for (size_t i = 0; i < node_count; ++i) {
+        const int begin = start(random);
+        intervals.emplace_back(begin, begin + length(random));
+    }
+    const auto interferes = [&](size_t a, size_t b) {
+        return intervals[a].first < intervals[b].second && intervals[b].first < intervals[a].second;
+    };
+
+    size_t registers = 1;
+    for (const auto& [begin, end] : intervals) {
+        const auto live = std::ranges::count_if(
+            intervals, [&](const auto& other) { return other.first <= begin && begin < other.second; });
+        registers = std::max(registers, static_cast<size_t>(live));
+    }
+
+    IntervalInstance instance;
+    for (size_t i = 0; i < node_count; ++i)
+        instance.graph.add_node(pbqp::Costs(registers, 0));
+    for (pbqp::NodeId m = 0; m < node_count; ++m) {
+        for (pbqp::NodeId n = m + 1; n < node_count; ++n) {
+            const bool affinity = percent(random) < 15;
+            if (!interferes(m, n) && !affinity) continue;
+            const pbqp::Cost copy = affinity ? static_cast<pbqp::Cost>(weight(random)) : 0;
+            pbqp::Costs matrix(registers * registers, copy);
+            for (size_t r = 0; r < registers; ++r)
+                matrix[r * registers + r] = interferes(m, n) ? pbqp::kInfinity : 0;
+            instance.graph.link(m, n, matrix);
+        }
+    }
+
+    // The interval that ends first is simplicial among the remaining ones.
+    ankerl::svector<size_t, 8> order(node_count);
+    std::ranges::iota(order, size_t{0});
+    std::ranges::sort(order, [&](size_t a, size_t b) { return intervals[a].second < intervals[b].second; });
+    instance.peo_position.resize(node_count);
+    for (size_t i = 0; i < node_count; ++i)
+        instance.peo_position[order[i]] = i;
+    return instance;
+}
+
+void peo_priority_always_colors_chordal_graphs() {
+    std::mt19937_64 random{61};
+    for (int trial = 0; trial < 500; ++trial) {
+        const IntervalInstance instance = random_interval_instance(random, 6 + static_cast<size_t>(trial % 30));
+        const pbqp::Solution solution   = pbqp::solve(instance.graph, instance.peo_position);
+        CHECK(solution.feasible());
+        CHECK(solution.cost == pbqp::evaluate(instance.graph, solution.choices));
+    }
+}
+
+void statistics_count_every_node() {
+    std::mt19937_64 random{67};
+    const IntervalInstance instance = random_interval_instance(random, 30);
+    const pbqp::Statistics stats    = pbqp::solve(instance.graph, instance.peo_position).statistics;
+    CHECK(stats.r0 + stats.r1 + stats.r2 + stats.rn + stats.single_option == instance.graph.node_count());
+
+    pbqp::Graph path;
+    for (int i = 0; i < 5; ++i)
+        path.add_node({1, 2});
+    for (pbqp::NodeId n = 1; n < 5; ++n)
+        path.link(n - 1, n, {0, 3, 3, 0});
+    const pbqp::Statistics path_stats = pbqp::solve(path).statistics;
+    CHECK(path_stats.rn == 0);
+    CHECK(path_stats.r0 + path_stats.r1 + path_stats.r2 == 5);
+}
+
+void infeasible_instances_are_reported() {
+    pbqp::Graph graph;
+    for (int i = 0; i < 3; ++i)
+        graph.add_node({0, 0});
+    const pbqp::Costs interference = {pbqp::kInfinity, 0, 0, pbqp::kInfinity};
+    for (pbqp::NodeId n = 0; n < 3; ++n)
+        graph.link(n, (n + 1) % 3, interference);
+    CHECK(!pbqp::solve(graph).feasible());
+}
+
+void rm_merges_implied_neighbour() {
+    // Figure 2 of Buchwald et al. 2011: coloring U implies V, and merging V into U leaves only exact reductions.
+    constexpr auto inf = pbqp::kInfinity;
+    pbqp::Graph graph;
+    const pbqp::NodeId u             = graph.add_node({0, 0});
+    const pbqp::NodeId v             = graph.add_node({0, 0});
+    const pbqp::NodeId w             = graph.add_node({0, 0, 0});
+    const pbqp::NodeId y             = graph.add_node({0, 0, 0});
+    const pbqp::NodeId a             = graph.add_node({0, 0, 0});
+    const pbqp::NodeId b             = graph.add_node({0, 0, 0});
+    const pbqp::Costs interference33 = {inf, 0, 0, 0, inf, 0, 0, 0, inf};
+    const pbqp::Costs affinity23     = {0, 1, 1, 1, 0, 1};
+    graph.link(u, w, {inf, 0, 0, 0, inf, 0});
+    graph.link(u, v, {inf, 0, 0, inf});
+    graph.link(v, w, {inf, 0, 0, 0, inf, 0});
+    graph.link(v, y, affinity23);
+    graph.link(u, a, affinity23);
+    graph.link(w, b, interference33);
+    graph.link(a, y, interference33);
+    graph.link(y, b, interference33);
+    graph.link(a, b, interference33);
+
+    const std::array<size_t, 6> priority = {5, 0, 4, 1, 2, 3};
+    const pbqp::Solution solution        = pbqp::solve(graph, priority);
+    CHECK(solution.statistics.rm >= 1);
+    CHECK(solution.cost == pbqp::solve_exhaustive(graph)->cost);
+}
+
+void evaluate_prices_an_assignment() {
     pbqp::Graph graph;
     static_cast<void>(graph.add_node({1, 2}));
 
-    CHECK_THROWS(pbqp::evaluate(graph, pbqp::Choices{}));
-    CHECK_THROWS(pbqp::evaluate(graph, pbqp::Choices{2}));
     CHECK(pbqp::evaluate(graph, pbqp::Choices{1}) == 2);
 }
 
-void graph_rejects_invalid_input() {
+void exhaustive_refuses_large_instances() {
+    pbqp::Graph graph;
+    for (int i = 0; i < 4; ++i)
+        graph.add_node({0, 1, 2});
+    CHECK(!pbqp::solve_exhaustive(graph, 80).has_value());
+    CHECK(pbqp::solve_exhaustive(graph, 81).has_value());
+}
+
+void find_edge_works_in_both_directions() {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add_node({1, 2});
     const pbqp::NodeId b = graph.add_node({1, 2});
 
-    CHECK_THROWS(graph.add_node({}));
-    CHECK_THROWS(graph.link(a, a, {0, 0, 0, 0})); // self edge
-    CHECK_THROWS(graph.link(a, b, {0, 0}));       // wrong size
     graph.link(a, b, {0, 0, 0, 0});
-    CHECK_THROWS(graph.link(b, a, {0, 0, 0, 0})); // duplicate
     CHECK(graph.find_edge(a, b) != pbqp::Graph::npos);
     CHECK(graph.find_edge(b, a) != pbqp::Graph::npos);
 }
@@ -377,8 +483,6 @@ void accessors_and_setters_round_trip() {
     graph.set_edge_costs(e, std::array<pbqp::Cost, 6>{6, 5, 4, 3, 2, 1});
     CHECK(graph.node_costs(m)[1] == 8);
     CHECK(graph.edge_cost(e, 1, 2) == 1);
-    CHECK_THROWS(graph.set_node_costs(n, std::array<pbqp::Cost, 2>{0, 0}));
-    CHECK_THROWS(graph.set_edge_costs(e, std::array<pbqp::Cost, 4>{0, 0, 0, 0}));
 }
 
 void removal_keeps_ids_stable() {
@@ -425,8 +529,8 @@ void parallel_exhaustive_matches_sequential() {
         }
     }
 
-    const pbqp::Solution sequential = pbqp::solve_exhaustive(graph, 1'000'000, 1);
-    const pbqp::Solution parallel   = pbqp::solve_exhaustive(graph, 1'000'000, 4);
+    const pbqp::Solution sequential = *pbqp::solve_exhaustive(graph, 1'000'000, 1);
+    const pbqp::Solution parallel   = *pbqp::solve_exhaustive(graph, 1'000'000, 4);
     CHECK(sequential.choices == parallel.choices);
     CHECK(sequential.cost == parallel.cost);
 }
@@ -448,7 +552,7 @@ void wide_option_vectors_stay_exact() {
         const pbqp::NodeId b = pair.add_node(values);
         std::ranges::generate(matrix, next_cost);
         pair.link(a, b, matrix);
-        CHECK(pbqp::solve(pair).cost == pbqp::solve_exhaustive(pair).cost);
+        CHECK(pbqp::solve(pair).cost == pbqp::solve_exhaustive(pair)->cost);
 
         // A triangle has no low-degree node, so RII contracts a wide matrix.
         pbqp::Graph triangle;
@@ -461,7 +565,7 @@ void wide_option_vectors_stay_exact() {
             std::ranges::generate(matrix, next_cost);
             triangle.link(nodes[i], nodes[(i + 1) % nodes.size()], matrix);
         }
-        CHECK(pbqp::solve(triangle).cost == pbqp::solve_exhaustive(triangle).cost);
+        CHECK(pbqp::solve(triangle).cost == pbqp::solve_exhaustive(triangle)->cost);
     }
 }
 
@@ -487,7 +591,7 @@ void concurrent_solves_share_a_graph() {
     }
 
     const pbqp::Solution heuristic = pbqp::solve(graph);
-    const pbqp::Solution optimal   = pbqp::solve_exhaustive(graph, 1'000'000, 1);
+    const pbqp::Solution optimal   = *pbqp::solve_exhaustive(graph, 1'000'000, 1);
 
     constexpr size_t thread_count = 4;
     std::array<pbqp::Solution, thread_count> heuristics;
@@ -497,7 +601,7 @@ void concurrent_solves_share_a_graph() {
     for (size_t i = 0; i < thread_count; ++i) {
         workers[i] = std::thread([&, i] {
             heuristics[i] = pbqp::solve(graph);
-            optima[i]     = pbqp::solve_exhaustive(graph, 1'000'000, 2);
+            optima[i]     = *pbqp::solve_exhaustive(graph, 1'000'000, 2);
         });
     }
     for (auto& worker : workers)
@@ -519,6 +623,7 @@ int main() {
     heuristic_is_optimal_on_random_trees(0, 10, 0);
     heuristic_is_optimal_on_random_trees(-1000, 1000, 0);
     heuristic_is_optimal_on_random_trees(-1000, 1000, 20);
+    heuristic_is_optimal_on_random_trees(-1'000'000, 1'000'000, 20);
     long_path_with_large_costs_stays_exact();
     rn_charges_its_edges_to_the_neighbours();
     heuristic_result_is_always_valid();
@@ -527,8 +632,13 @@ int main() {
     infinite_sums_do_not_wrap();
     pruning_makes_dense_graphs_exact();
     heuristic_handles_forbidden_options_on_dense_graphs();
-    evaluate_rejects_bad_assignments();
-    graph_rejects_invalid_input();
+    peo_priority_always_colors_chordal_graphs();
+    statistics_count_every_node();
+    infeasible_instances_are_reported();
+    rm_merges_implied_neighbour();
+    evaluate_prices_an_assignment();
+    exhaustive_refuses_large_instances();
+    find_edge_works_in_both_directions();
     accessors_and_setters_round_trip();
     removal_keeps_ids_stable();
     parallel_exhaustive_matches_sequential();

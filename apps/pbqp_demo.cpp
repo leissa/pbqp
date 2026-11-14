@@ -136,18 +136,24 @@ int main(int argc, char** argv) {
 
         const pbqp::Solution heuristic = pbqp::solve(graph);
         std::println("heuristic: cost {}", heuristic.cost);
+        const pbqp::Statistics& stats = heuristic.statistics;
+        std::println(
+            "reduced  : R0 {}, R1 {}, R2 {}, RN {}, RM {}, single-option {}; {} forbidden options, {} dropped edges",
+            stats.r0, stats.r1, stats.r2, stats.rn, stats.rm, stats.single_option, stats.forbidden_options,
+            stats.dropped_edges);
 
-        try {
-            const pbqp::Solution optimal = pbqp::solve_exhaustive(graph, 2'000'000);
-            std::print("brute    : cost {}", optimal.cost);
-            if (heuristic.cost == optimal.cost) {
+        if (const auto optimal = pbqp::solve_exhaustive(graph, 2'000'000)) {
+            std::print("brute    : cost {}", optimal->cost);
+            if (heuristic.cost == optimal->cost) {
                 std::println("  (heuristic matches the optimum)");
             } else {
-                const auto gap       = static_cast<double>(heuristic.cost - optimal.cost);
-                const double percent = 100.0 * gap / static_cast<double>(std::max<pbqp::CostSum>(optimal.cost, 1));
+                const auto gap       = static_cast<double>(heuristic.cost - optimal->cost);
+                const double percent = 100.0 * gap / static_cast<double>(std::max<pbqp::CostSum>(optimal->cost, 1));
                 std::println("  (heuristic is {:.1f}% above the optimum)", percent);
             }
-        } catch (const std::runtime_error&) { std::println("brute    : skipped, instance too large for brute force"); }
+        } else {
+            std::println("brute    : skipped, instance too large for brute force");
+        }
 
         print_assignment(graph, heuristic);
         return 0;

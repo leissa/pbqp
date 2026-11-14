@@ -2,11 +2,24 @@
 
 #include <cstddef>
 
+#include <optional>
 #include <span>
 
 #include "pbqp/graph.hpp"
 
 namespace pbqp {
+
+/// How often `solve` applied each reduction.
+struct Statistics {
+    size_t r0                = 0;
+    size_t r1                = 0;
+    size_t r2                = 0;
+    size_t rn                = 0;
+    size_t rm                = 0; // neighbours merged before an RN decision
+    size_t single_option     = 0; // degree >= 3 nodes with one option left, reduced exactly
+    size_t forbidden_options = 0;
+    size_t dropped_edges     = 0; // independent edges removed by normalization
+};
 
 /// A complete assignment of options to nodes.
 struct Solution {
@@ -14,13 +27,15 @@ struct Solution {
     Choices choices;
     /// Total cost of the assignment under the original graph.
     CostSum cost = 0;
+    Statistics statistics;
+
+    [[nodiscard]] bool feasible() const { return cost != kInfiniteSum; }
 };
 
-/// All solver functions are safe to call concurrently on the same graph; a
-/// Graph must not be mutated while another thread reads it.
+/// All solver functions are safe to call concurrently on a graph that nobody mutates meanwhile.
 ///
 /// Cost of `choices` under `graph`, or kInfiniteSum if it picks a kInfinity entry.
-/// Throws std::invalid_argument if `choices` is too short or contains an out-of-range option.
+/// Requires a valid option for every live node.
 [[nodiscard]] CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices);
 
 /// Heuristic PBQP solver.
@@ -28,13 +43,15 @@ struct Solution {
 /// Reduces degree 0, 1 (RI) and 2 (RII) nodes exactly and higher-degree nodes with the RN heuristic.
 /// Normalization keeps intermediate costs relative, so they saturate only where option costs differ by kInfinity.
 /// Short of that, the result is optimal whenever no RN step is needed, e.g. on trees.
-[[nodiscard]] Solution solve(const Graph& graph);
+/// RN decides the node with the highest `rn_priority[n]` first; degree and cost spread only break ties.
+/// SSA-based register allocation passes PEO positions, so coloring cannot fail (Buchwald et al. 2011).
+/// Requires `rn_priority` to be empty or to cover every node id.
+[[nodiscard]] Solution solve(const Graph& graph, std::span<const size_t> rn_priority = {});
 
-/// Brute-force optimum, useful to cross-check small instances. The search
-/// space is split across `thread_count` threads (0 = hardware concurrency).
-/// Throws std::runtime_error if there are more than `max_combinations`
-/// candidate assignments.
-[[nodiscard]] Solution
+/// Brute-force optimum, useful to cross-check small instances.
+/// The search space is split across `thread_count` threads (0 = hardware concurrency).
+/// Returns nothing if there are more than `max_combinations` candidate assignments.
+[[nodiscard]] std::optional<Solution>
 solve_exhaustive(const Graph& graph, size_t max_combinations = 10'000'000, unsigned thread_count = 0);
 
 } // namespace pbqp

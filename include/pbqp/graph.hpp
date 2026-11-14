@@ -20,7 +20,7 @@ using EdgeId = size_t;
 using OptionIndex = size_t;
 
 /// Compiler PBQP costs are small integers; totals use CostSum.
-using Cost    = std::int16_t;
+using Cost    = std::int32_t;
 using CostSum = std::int64_t;
 
 /// Forbids an option or option pair; every total that contains it is kInfiniteSum.
@@ -58,9 +58,8 @@ public:
         return add_node(std::span<const Cost>{costs.begin(), costs.size()});
     }
 
-    /// Link `m` and `n`. `costs` must hold exactly
-    /// option_count(m) * option_count(n) entries, row-major with `m` as the
-    /// row index. Self edges and duplicate edges are rejected.
+    /// Link `m` and `n` with a row-major option_count(m) x option_count(n) matrix.
+    /// Requires distinct nodes that are not linked yet.
     EdgeId link(NodeId m, NodeId n, std::span<const Cost> costs);
     EdgeId link(NodeId m, NodeId n, std::initializer_list<Cost> costs) {
         return link(m, n, std::span<const Cost>{costs.begin(), costs.size()});

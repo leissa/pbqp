@@ -1,0 +1,29 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build and test ${{matrix.build-type}}
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Debug, Release]
+
+    steps:
+      - name: Clone recursively
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config ${{matrix.build-type}} -v
+
+      - name: Test
+        run: ctest --test-dir build -C ${{matrix.build-type}} --output-on-failure

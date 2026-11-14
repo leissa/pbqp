@@ -1,0 +1,40 @@
+name: linux
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build and test ${{matrix.build-type}}
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Debug, Release]
+
+    steps:
+      - name: Clone recursively
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # svector's C++23 range members need gcc-15's libstdc++, which ubuntu-24.04 lacks.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-15 ninja-build
+
+      - name: Configure
+        run: |
+          CXX=g++-15                                      \
+          cmake -B build                                  \
+                -G Ninja                                  \
+                -DCMAKE_BUILD_TYPE=${{matrix.build-type}} \
+                -DPBQP_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build -v
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

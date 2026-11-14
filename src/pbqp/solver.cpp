@@ -1,15 +1,15 @@
 #include "pbqp/solver.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
 #include <algorithm>
-#include <exception>
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <queue>
-#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -40,24 +40,24 @@ CostSum add_sums(CostSum lhs, CostSum rhs) {
     return lhs == kInfiniteSum || rhs == kInfiniteSum ? kInfiniteSum : lhs + rhs;
 }
 
-/// Only valid for normalized, hence non-negative, costs: their sum fits into 16 unsigned bits.
+/// Only valid for normalized, hence non-negative, costs: their sum fits into 32 unsigned bits.
 Cost add_costs(Cost lhs, Cost rhs) {
-    const auto sum = static_cast<std::uint16_t>(static_cast<std::uint16_t>(lhs) + static_cast<std::uint16_t>(rhs));
-    return static_cast<Cost>(std::min(sum, static_cast<std::uint16_t>(kInfinity)));
+    const auto sum = static_cast<std::uint32_t>(lhs) + static_cast<std::uint32_t>(rhs);
+    return static_cast<Cost>(std::min(sum, static_cast<std::uint32_t>(kInfinity)));
 }
 
 /// Any sign; kInfinity absorbs.
 Cost add_signed(Cost lhs, Cost rhs) {
     if (lhs == kInfinity || rhs == kInfinity) return kInfinity;
-    const int sum = lhs + rhs;
-    return static_cast<Cost>(std::clamp<int>(sum, std::numeric_limits<Cost>::min(), kInfinity));
+    const CostSum sum = CostSum{lhs} + rhs;
+    return static_cast<Cost>(std::clamp<CostSum>(sum, std::numeric_limits<Cost>::min(), kInfinity));
 }
 
 /// Removes `minimum` from `value`; an infinite minimum means the whole row was moved elsewhere.
 Cost subtract(Cost value, Cost minimum) {
     if (minimum == kInfinity) return 0;
     if (value == kInfinity) return kInfinity;
-    return static_cast<Cost>(std::min<int>(value - minimum, kInfinity));
+    return static_cast<Cost>(std::min<CostSum>(CostSum{value} - minimum, kInfinity));
 }
 
 PBQP_DISPATCH void add_into(Cost* __restrict dst, const Cost* __restrict src, size_t count) {
@@ -94,9 +94,12 @@ Matrix transpose(const Matrix& in, size_t rows, size_t cols) {
 /// Normalized working copy of a Graph with degree-bucketed worklists.
 class Reducer {
 public:
-    explicit Reducer(const Graph& graph) {
+    Reducer(const Graph& graph, std::span<const size_t> rn_priority)
+        : rn_priority_(rn_priority) {
         for (const auto n : graph.nodes())
             nodes_.resize(std::max(nodes_.size(), n + 1));
+        assert((rn_priority.empty() || rn_priority.size() >= nodes_.size())
+               && "solve: rn_priority does not cover every node");
         for (const auto n : graph.nodes()) {
             const auto costs = graph.node_costs(n);
             nodes_[n].costs.assign(costs.begin(), costs.end());
@@ -119,8 +122,9 @@ public:
     }
 
     [[nodiscard]] size_t slots() const { return nodes_.size(); }
+    [[nodiscard]] const Statistics& statistics() const { return statistics_; }
 
-    /// Lowest degree first; RN candidates are ordered by degree, then rn_score.
+    /// Exact reductions first; RN candidates are ordered by priority, degree, then rn_score.
     NodeId next() {
         while (!dirty_.empty()) {
             const NodeId n = dirty_.back();
@@ -142,17 +146,35 @@ public:
         return Graph::npos;
     }
 
-    Reduction reduce(NodeId n) {
+    void reduce(NodeId n, std::vector<Reduction>& stack) {
+        if (degree(n) > 2 && options(n) > 1) {
+            bool merged = false;
+            while (merge_neighbour(n, stack))
+                merged = true;
+            if (merged) {
+                touch(n);
+                return;
+            }
+        }
+
         Reduction reduction = snapshot(n);
         switch (reduction.edges.size()) {
-            case 0: break;
-            case 1: fold_into_neighbour(reduction); break;
-            case 2: contract(reduction); break;
-            default: fold_locally_best_option(reduction); break;
+            case 0: ++statistics_.r0; break;
+            case 1:
+                ++statistics_.r1;
+                fold_into_neighbour(reduction);
+                break;
+            case 2:
+                ++statistics_.r2;
+                contract(reduction);
+                break;
+            default:
+                ++(options(n) == 1 ? statistics_.single_option : statistics_.rn);
+                fold_locally_best_option(reduction);
+                break;
         }
-        Reduction restored = restore_original_options(std::move(reduction));
+        stack.emplace_back(restore_original_options(std::move(reduction)));
         remove_node(n);
-        return restored;
     }
 
 private:
@@ -174,6 +196,7 @@ private:
     };
 
     struct Candidate {
+        size_t urgency = 0; // inverted priority, so that the min-heap pops the highest priority first
         size_t degree  = 0;
         double score   = 0.0;
         NodeId node    = 0;
@@ -201,7 +224,12 @@ private:
             if (!node.low) low_.emplace_back(n);
             node.low = true;
         } else {
-            high_.push(Candidate{.degree = degree(n), .score = rn_score(n), .node = n, .version = node.version});
+            const size_t priority = rn_priority_.empty() ? 0 : rn_priority_[n];
+            high_.push(Candidate{.urgency = ~priority,
+                                 .degree  = degree(n),
+                                 .score   = rn_score(n),
+                                 .node    = n,
+                                 .version = node.version});
         }
     }
 
@@ -241,6 +269,7 @@ private:
         if (std::ranges::all_of(edge.costs, [](Cost cost) { return cost == 0; })) {
             erase(nodes_[edge.src].edges, e);
             erase(nodes_[edge.dst].edges, e);
+            ++statistics_.dropped_edges;
         }
     }
 
@@ -274,6 +303,7 @@ private:
         for (OptionIndex a = 0; a < options(n) && options(n) > 1;) {
             if (nodes_[n].costs[a] == kInfinity) {
                 erase_option(n, a);
+                ++statistics_.forbidden_options;
                 changed = true;
             } else {
                 ++a;
@@ -392,20 +422,70 @@ private:
                          n_dim);
         }
 
-        const NodeId m = to_m.neighbour;
-        const NodeId n = to_n.neighbour;
-        EdgeId e       = find_edge(m, n);
+        add_to_edge(to_m.neighbour, to_n.neighbour, std::move(merged));
+    }
+
+    /// Adds `matrix` (oriented (m, n)) to the edge between m and n, creating it if necessary.
+    void add_to_edge(NodeId m, NodeId n, Matrix matrix) {
+        EdgeId e = find_edge(m, n);
         if (e != Graph::npos) {
             Edge& edge = edges_[e];
-            if (edge.src != m) merged = transpose(merged, n_dim, m_dim);
-            add_into(edge.costs.data(), merged.data(), merged.size());
+            if (edge.src != m) matrix = transpose(matrix, options(n), options(m));
+            add_into(edge.costs.data(), matrix.data(), matrix.size());
         } else {
             e = edges_.size();
-            link(m, n, std::move(merged));
+            link(m, n, std::move(matrix));
         }
         normalize_edge(e);
         normalize_node(m);
         normalize_node(n);
+    }
+
+    /// The option of `m` that each option of `n` forces, or nothing if some option of `n` leaves `m` a choice.
+    [[nodiscard]] std::optional<ankerl::svector<OptionIndex, 4>> implied_options(EdgeId e, NodeId n) const {
+        const TrimmedEdge edge = trim_edge(e, n);
+        const Vector& m_costs  = nodes_[edge.neighbour].costs;
+        ankerl::svector<OptionIndex, 4> implied(options(n), Graph::npos);
+        for (OptionIndex i = 0; i < options(n); ++i) {
+            if (nodes_[n].costs[i] == kInfinity) continue;
+            for (OptionIndex j = 0; j < edge.neighbour_options; ++j) {
+                if (add_costs(edge.matrix[i * edge.neighbour_options + j], m_costs[j]) == kInfinity) continue;
+                if (implied[i] != Graph::npos) return std::nullopt;
+                implied[i] = j;
+            }
+        }
+        return implied;
+    }
+
+    /// RM (Buchwald et al. 2011): moves the other edges of a neighbour whose option `n` determines onto `n`.
+    bool merge_neighbour(NodeId n, std::vector<Reduction>& stack) {
+        for (const auto e : nodes_[n].edges) {
+            const NodeId m = other_end(e, n);
+            if (degree(m) < 2) continue;
+            const auto implied = implied_options(e, n);
+            if (!implied) continue;
+
+            const Adjacency moved = nodes_[m].edges;
+            for (const auto f : moved) {
+                if (f == e) continue;
+                const NodeId w         = other_end(f, m);
+                const TrimmedEdge to_w = trim_edge(f, m);
+                const size_t w_options = to_w.neighbour_options;
+                Matrix delta(options(n) * w_options, 0);
+                for (OptionIndex i = 0; i < options(n); ++i)
+                    if ((*implied)[i] != Graph::npos)
+                        std::ranges::copy_n(to_w.matrix.data() + (*implied)[i] * w_options,
+                                            static_cast<std::ptrdiff_t>(w_options), delta.data() + i * w_options);
+                erase(nodes_[m].edges, f);
+                erase(nodes_[w].edges, f);
+                add_to_edge(n, w, std::move(delta));
+                touch(w);
+            }
+            ++statistics_.rm;
+            reduce(m, stack);
+            return true;
+        }
+        return false;
     }
 
     /// RN: commit to the locally best option and charge its matrix rows to the neighbours.
@@ -438,6 +518,8 @@ private:
     std::vector<Edge> edges_;
     std::vector<NodeId> low_;
     std::vector<NodeId> dirty_;
+    std::span<const size_t> rn_priority_;
+    Statistics statistics_;
     std::priority_queue<Candidate, std::vector<Candidate>, std::greater<>> high_;
 };
 
@@ -464,9 +546,9 @@ CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
     CostSum total = 0;
 
     for (const auto n : graph.nodes()) {
-        if (choices.size() <= n) throw std::invalid_argument("evaluate: choices is too short");
+        assert(n < choices.size() && "evaluate: choices is too short");
         const auto costs = graph.node_costs(n);
-        if (choices[n] >= costs.size()) throw std::invalid_argument("evaluate: option index out of range");
+        assert(choices[n] < costs.size() && "evaluate: option index out of range");
         total = add_sums(total, widen(costs[choices[n]]));
     }
     for (const auto e : graph.edges()) {
@@ -476,20 +558,20 @@ CostSum evaluate(const Graph& graph, std::span<const OptionIndex> choices) {
     return total;
 }
 
-Solution solve(const Graph& graph) {
-    Reducer reducer{graph};
+Solution solve(const Graph& graph, std::span<const size_t> rn_priority) {
+    Reducer reducer{graph, rn_priority};
     std::vector<Reduction> stack;
     stack.reserve(graph.node_count());
 
     for (NodeId n = reducer.next(); n != Graph::npos; n = reducer.next())
-        stack.emplace_back(reducer.reduce(n));
+        reducer.reduce(n, stack);
 
     Choices choices(reducer.slots(), 0);
     for (auto it = stack.rbegin(); it != stack.rend(); ++it)
         choices[it->node] = back_substitute(*it, choices);
 
     const CostSum cost = evaluate(graph, choices);
-    return Solution{.choices = std::move(choices), .cost = cost};
+    return Solution{.choices = std::move(choices), .cost = cost, .statistics = reducer.statistics()};
 }
 
 namespace {
@@ -503,7 +585,7 @@ struct Enumeration {
     size_t combinations = 1;
 };
 
-Enumeration make_enumeration(const Graph& graph, size_t max_combinations) {
+std::optional<Enumeration> make_enumeration(const Graph& graph, size_t max_combinations) {
     Enumeration enumeration;
     for (const auto n : graph.nodes()) {
         enumeration.nodes.emplace_back(n);
@@ -516,7 +598,7 @@ Enumeration make_enumeration(const Graph& graph, size_t max_combinations) {
 
     size_t combinations = 1;
     for (const auto options : enumeration.options) {
-        if (combinations > max_combinations / options) throw std::runtime_error("solve_exhaustive: instance too large");
+        if (combinations > max_combinations / options) return std::nullopt;
         combinations *= options;
     }
     enumeration.combinations = combinations;
@@ -541,13 +623,13 @@ BestAssignment search_range(const Graph& graph, const Enumeration& enumeration, 
         choices[enumeration.nodes[i]] = (begin / enumeration.place[i]) % enumeration.options[i];
 
     BestAssignment best{
-        .solution = Solution{.choices = choices, .cost = kInfiniteSum},
+        .solution = Solution{.choices = choices, .cost = kInfiniteSum, .statistics = {}},
         .index    = end
     };
     for (size_t index = begin; index < end; ++index) {
         const CostSum cost = evaluate(graph, choices);
         if (cost < best.solution.cost) {
-            best.solution = Solution{.choices = choices, .cost = cost};
+            best.solution = Solution{.choices = choices, .cost = cost, .statistics = {}};
             best.index    = index;
         }
         for (size_t i = 0; i < enumeration.nodes.size(); ++i) {
@@ -560,8 +642,10 @@ BestAssignment search_range(const Graph& graph, const Enumeration& enumeration, 
 
 } // namespace
 
-Solution solve_exhaustive(const Graph& graph, size_t max_combinations, unsigned thread_count) {
-    const Enumeration enumeration = make_enumeration(graph, max_combinations);
+std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinations, unsigned thread_count) {
+    const auto made = make_enumeration(graph, max_combinations);
+    if (!made) return std::nullopt;
+    const Enumeration& enumeration = *made;
     if (enumeration.nodes.empty()) return Solution{};
 
     unsigned requested = thread_count;
@@ -572,33 +656,21 @@ Solution solve_exhaustive(const Graph& graph, size_t max_combinations, unsigned 
     if (workers <= 1) return search_range(graph, enumeration, 0, enumeration.combinations).solution;
 
     std::vector<BestAssignment> partials(workers);
-    std::vector<std::exception_ptr> errors(workers);
-    std::vector<std::thread> threads;
-    threads.reserve(workers);
+    {
+        std::vector<std::jthread> threads;
+        threads.reserve(workers);
 
-    const size_t base  = enumeration.combinations / workers;
-    const size_t extra = enumeration.combinations % workers;
-
-    try {
-        size_t begin = 0;
+        const size_t base  = enumeration.combinations / workers;
+        const size_t extra = enumeration.combinations % workers;
+        size_t begin       = 0;
         for (size_t i = 0; i < workers; ++i) {
             const size_t end = begin + base + (i < extra ? 1 : 0);
-            threads.emplace_back([&graph, &enumeration, &partials, &errors, i, begin, end] {
-                try {
-                    partials[i] = search_range(graph, enumeration, begin, end);
-                } catch (...) { errors[i] = std::current_exception(); }
+            threads.emplace_back([&graph, &enumeration, &partials, i, begin, end] {
+                partials[i] = search_range(graph, enumeration, begin, end);
             });
             begin = end;
         }
-    } catch (...) {
-        for (auto& thread : threads)
-            thread.join();
-        throw;
     }
-    for (auto& thread : threads)
-        thread.join();
-    for (const auto& error : errors)
-        if (error) std::rethrow_exception(error);
 
     BestAssignment best = partials[0];
     for (size_t i = 1; i < workers; ++i) {
