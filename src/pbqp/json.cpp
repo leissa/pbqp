@@ -240,16 +240,13 @@ public:
 
     Instance parse_instance() {
         parse_object("PBQP instance", [&](fe::Sym key) {
-            if (key == "meta")
-                parse_meta();
-            else if (key == "nodes")
-                parse_array("`nodes`", [&] { parse_node(); });
-            else if (key == "edges")
-                parse_array("`edges`", [&] { parse_edge(); });
-            else if (key == "peo")
-                parse_array("`peo`", [&] { peo_.push_back(parse_index("`peo`")); });
-            else
-                parse_value("PBQP instance");
+            // clang-format off
+            if      (key == "meta" ) parse_meta();
+            else if (key == "nodes") parse_array("`nodes`", [this] { parse_node(); });
+            else if (key == "edges") parse_array("`edges`", [this] { parse_edge(); });
+            else if (key == "peo"  ) parse_array("`peo`",   [this] { peo_.push_back(parse_index("`peo`")); });
+            else parse_value("PBQP instance");
+            // clang-format on
         });
         expect(Tag::EoF, "PBQP instance");
         return error().ok() ? build() : Instance{};
@@ -379,18 +376,14 @@ private:
         EdgeData edge;
         std::optional<Field> source, target;
         parse_object("edge", [&](fe::Sym key) {
-            if (key == "source")
-                source = parse_index("edge `source`");
-            else if (key == "target")
-                target = parse_index("edge `target`");
-            else if (key == "rows")
-                edge.rows = parse_index("edge `rows`");
-            else if (key == "columns")
-                edge.columns = parse_index("edge `columns`");
-            else if (key == "cost")
-                edge.cost_loc = parse_costs(edge.costs, "edge `cost`");
-            else
-                parse_value("edge");
+            // clang-format off
+            if      (key == "source" ) source = parse_index("edge `source`");
+            else if (key == "target" ) target = parse_index("edge `target`");
+            else if (key == "rows"   ) edge.rows     = parse_index("edge `rows`");
+            else if (key == "columns") edge.columns  = parse_index("edge `columns`");
+            else if (key == "cost"   ) edge.cost_loc = parse_costs(edge.costs, "edge `cost`");
+            else parse_value("edge");
+            // clang-format on
         });
         edge.loc = track;
         if (!source) return void(error().e(edge.loc, "edge without `source`"));
