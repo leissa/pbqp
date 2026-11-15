@@ -16,7 +16,7 @@ ctest --preset debug
 | ---- | ------- |
 | Build | `cmake --build --preset debug` (also `release`, `asan`, `tsan`) |
 | Tests | `ctest --preset debug --output-on-failure` |
-| One test binary | `./build/debug/pbqp_tests` |
+| One test binary | `./build/debug/pbqp_tests` (`--test-case=NAME` runs one `TEST_CASE`) |
 | Demo | `./build/debug/pbqp_demo --nodes 20 --options 3 --edges 40` (`--in`/`--out FILE` read/write JSON, `--dot FILE` writes Graphviz) |
 | Format | `clang-format -i include/pbqp/*.h src/pbqp/*.cpp apps/*.cpp tests/*.cpp` |
 
@@ -25,7 +25,7 @@ Warnings are on (`-Wall -Wextra -Wpedantic -Wconversion -Wshadow`, `-Wshadow=loc
 ## Layout
 
 - `include/pbqp/` public headers; `src/pbqp/` implementations, mirroring the include tree.
-- `apps/` demo CLI, `tests/` dependency-free CTest binary.
+- `apps/` demo CLI, `tests/` doctest binary built from `tests/test_pbqp.cpp` (doctest comes from `submodules/fe/submodules/doctest`, and `doctest_discover_tests` registers every `TEST_CASE` with CTest).
 - `submodules/fe` is a public dependency (`fe`); the public headers use `fe::Vector` for storage and `fe::View`/`fe::Span` for spans.
 - `Graph` stores cost vectors/matrices with stable ids and at most one edge per node pair (`add_edge_costs` sums onto an existing edge in either direction); storage stays private (read-only spans, `edge(e)` endpoints, `set_node_costs`/`set_edge_costs`) so equal edge matrices are hash-consed into one refcounted copy (`ankerl::unordered_dense` keyed by hash, collisions chained in the pool); `Cost` is `std::int32_t`, `CostSum` totals are `std::int64_t`; `kInfinity` marks forbidden entries and makes any total `kInfiniteSum`.
 - `solve` reduces a normalized `int32` working copy (non-negative, saturating at `kInfinity`, all-zero edges dropped) whose edges borrow the graph's matrices until their first write, which copies into an `fe::Arena` as plain arrays; transient matrices live in a second, rolled-back scratch arena, and RII/RM results are allocated last so they can become the edge's matrix or be rolled back. Worklists separate exact reductions from RN candidates: forbidden options are deleted (tracked back to original indices), single-option nodes and RI/RII are reduced exactly, RM merges implied neighbours right before RN, and RN commits to the locally best option, taking the highest optional `rn_priority` first (PEO positions for SSA-based register allocation), then the highest degree, then the widest cost spread. It back-substitutes in reverse reduction order; infeasible solutions carry `conflicts`, the nodes whose choice hits a `kInfinity` entry. `solve_exhaustive` is the reference for tiny instances.

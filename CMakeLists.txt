@@ -71,9 +71,14 @@ endif()
 if(PBQP_BUILD_TESTS)
     enable_testing()
 
+    set(DOCTEST_NO_INSTALL ON)
+    set(DOCTEST_WITH_MAIN_IN_STATIC_LIB OFF)
+    add_subdirectory(submodules/fe/submodules/doctest)
+
     add_executable(pbqp_tests tests/test_pbqp.cpp)
-    target_link_libraries(pbqp_tests PRIVATE pbqp::pbqp)
+    target_link_libraries(pbqp_tests PRIVATE pbqp::pbqp doctest::doctest)
     target_compile_definitions(pbqp_tests PRIVATE PBQP_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
-    add_test(NAME pbqp_tests COMMAND pbqp_tests)
+    include(submodules/fe/submodules/doctest/scripts/cmake/doctest.cmake)
+    doctest_discover_tests(pbqp_tests)
 endif()

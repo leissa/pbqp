@@ -1,10 +1,11 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+
 #include <cstddef>
 #include <cstdint>
 
 #include <algorithm>
 #include <array>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -15,6 +16,7 @@
 #include <thread>
 #include <utility>
 
+#include <doctest/doctest.h>
 #include <fe/vector.h>
 
 #include "pbqp/dot.h"
@@ -24,17 +26,7 @@
 
 namespace {
 
-int failures = 0;
-
-#define CHECK(condition)                                                                    \
-    do {                                                                                    \
-        if (!(condition)) {                                                                 \
-            std::cerr << __FILE__ << ':' << __LINE__ << ": CHECK failed: " #condition "\n"; \
-            ++failures;                                                                     \
-        }                                                                                   \
-    } while (false)
-
-void single_node_picks_cheapest_option() {
+TEST_CASE("single node picks cheapest option") {
     pbqp::Graph graph;
     const pbqp::NodeId n = graph.add({5, 1, 3});
 
@@ -43,7 +35,7 @@ void single_node_picks_cheapest_option() {
     CHECK(solution.cost == 1);
 }
 
-void independent_nodes_are_independent() {
+TEST_CASE("independent nodes are independent") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({4, 2});
     const pbqp::NodeId b = graph.add({7, 8, 6});
@@ -54,7 +46,7 @@ void independent_nodes_are_independent() {
     CHECK(solution.cost == 8);
 }
 
-void edge_choice_trades_off_node_costs() {
+TEST_CASE("edge choice trades off node costs") {
     // The cheap option of `a` is expensive once the edge is paid for.
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({0, 1});
@@ -73,7 +65,7 @@ void edge_choice_trades_off_node_costs() {
     CHECK(solution.cost == 1);
 }
 
-void triangle_with_conflicting_colours() {
+TEST_CASE("triangle with conflicting colours") {
     // Two colours, an odd cycle, and a penalty for monochromatic edges: one
     // edge has to be paid for no matter what.
     pbqp::Graph graph;
@@ -95,8 +87,8 @@ void triangle_with_conflicting_colours() {
     CHECK(solution.cost == pbqp::evaluate(graph, solution.choices));
 }
 
-/// Random tree: RI/RII are exact there, so the heuristic must be optimal.
-void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbidden_percent) {
+// Random tree: RI/RII are exact there, so the heuristic must be optimal.
+void check_random_trees(int min_cost, int max_cost, int forbidden_percent) {
     std::mt19937_64 random{7};
     std::uniform_int_distribution<int> cost{min_cost, max_cost};
     std::uniform_int_distribution<int> percent{0, 99};
@@ -131,7 +123,21 @@ void heuristic_is_optimal_on_random_trees(int min_cost, int max_cost, int forbid
     }
 }
 
-void long_path_with_large_costs_stays_exact() {
+TEST_CASE("heuristic is optimal on random trees") {
+    for (const auto& [min_cost, max_cost, forbidden_percent] : {
+             std::tuple{         0,        10,  0},
+             std::tuple{     -1000,      1000,  0},
+             std::tuple{     -1000,      1000, 20},
+             std::tuple{-1'000'000, 1'000'000, 20}
+    }) {
+        CAPTURE(min_cost);
+        CAPTURE(max_cost);
+        CAPTURE(forbidden_percent);
+        check_random_trees(min_cost, max_cost, forbidden_percent);
+    }
+}
+
+TEST_CASE("long path with large costs stays exact") {
     pbqp::Graph graph;
     pbqp::NodeId previous = graph.add({4000, 4000});
     for (int i = 0; i < 11; ++i) {
@@ -145,7 +151,7 @@ void long_path_with_large_costs_stays_exact() {
     CHECK(pbqp::solve(graph).cost == pbqp::solve_exhaustive(graph)->cost);
 }
 
-void rn_charges_its_edges_to_the_neighbours() {
+TEST_CASE("rn charges its edges to the neighbours") {
     // Dense instance found by search: without charging the RN rows to the neighbours the result is 51.
     pbqp::Graph graph;
     graph.add({8, 1, 9});
@@ -167,9 +173,9 @@ void rn_charges_its_edges_to_the_neighbours() {
     CHECK(pbqp::solve(graph).cost == 45);
 }
 
-/// On general graphs the heuristic may lose, but it must return a valid
-/// assignment whose reported cost matches a fresh evaluation.
-void heuristic_result_is_always_valid() {
+TEST_CASE("heuristic result is always valid") {
+    // On general graphs the heuristic may lose, but it must return a valid
+    // assignment whose reported cost matches a fresh evaluation.
     std::mt19937_64 random{11};
     std::uniform_int_distribution<int> cost{0, 10};
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
@@ -203,7 +209,7 @@ void heuristic_result_is_always_valid() {
     }
 }
 
-void negative_costs_reward_coalescing() {
+TEST_CASE("negative costs reward coalescing") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({0, 0});
     const pbqp::NodeId b = graph.add({0, 0});
@@ -220,7 +226,7 @@ void negative_costs_reward_coalescing() {
     CHECK(solution.choices[a] == solution.choices[b]);
 }
 
-void infinity_forbids_same_option() {
+TEST_CASE("infinity forbids same option") {
     constexpr auto infinity = std::numeric_limits<pbqp::Cost>::max();
 
     pbqp::Graph graph;
@@ -240,7 +246,7 @@ void infinity_forbids_same_option() {
     CHECK(solution.cost == pbqp::evaluate(graph, solution.choices));
 }
 
-void infinite_sums_do_not_wrap() {
+TEST_CASE("infinite sums do not wrap") {
     constexpr auto infinity = std::numeric_limits<pbqp::Cost>::max();
 
     // Three nodes and two colours make one monochromatic edge unavoidable, so the reduction sums several infinities.
@@ -265,7 +271,7 @@ void infinite_sums_do_not_wrap() {
     CHECK(heuristic.cost == pbqp::evaluate(graph, heuristic.choices));
 }
 
-/// Complete graph whose nodes all keep one option after pruning, except for `free_nodes`, which then form a tree.
+// Complete graph whose nodes all keep one option after pruning, except for `free_nodes`, which then form a tree.
 pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t num_nodes, size_t free_nodes) {
     std::uniform_int_distribution<int> cost{0, 10};
     std::uniform_int_distribution<size_t> num_options{2, 4};
@@ -292,7 +298,7 @@ pbqp::Graph pruned_complete_graph(std::mt19937_64& random, size_t num_nodes, siz
     return graph;
 }
 
-void pruning_makes_dense_graphs_exact() {
+TEST_CASE("pruning makes dense graphs exact") {
     std::mt19937_64 random{53};
     for (int trial = 0; trial < 100; ++trial) {
         const pbqp::Graph graph        = pruned_complete_graph(random, 6, 2);
@@ -302,7 +308,7 @@ void pruning_makes_dense_graphs_exact() {
     }
 }
 
-void heuristic_handles_forbidden_options_on_dense_graphs() {
+TEST_CASE("heuristic handles forbidden options on dense graphs") {
     std::mt19937_64 random{59};
     std::uniform_int_distribution<int> cost{0, 10};
     std::uniform_int_distribution<int> percent{0, 99};
@@ -338,7 +344,7 @@ struct IntervalInstance {
     fe::Vector<size_t, 8> peo_position;
 };
 
-/// Interval graphs are chordal, so k = maximum overlap registers always suffice; affinities add coalescing costs.
+// Interval graphs are chordal, so k = maximum overlap registers always suffice; affinities add coalescing costs.
 IntervalInstance random_interval_instance(std::mt19937_64& random, size_t num_nodes) {
     std::uniform_int_distribution<int> start{0, 40};
     std::uniform_int_distribution<int> length{1, 12};
@@ -386,7 +392,7 @@ IntervalInstance random_interval_instance(std::mt19937_64& random, size_t num_no
     return instance;
 }
 
-void peo_priority_always_colors_chordal_graphs() {
+TEST_CASE("peo priority always colors chordal graphs") {
     std::mt19937_64 random{61};
     for (int trial = 0; trial < 500; ++trial) {
         const IntervalInstance instance = random_interval_instance(random, 6 + static_cast<size_t>(trial % 30));
@@ -396,7 +402,7 @@ void peo_priority_always_colors_chordal_graphs() {
     }
 }
 
-void statistics_count_every_node() {
+TEST_CASE("statistics count every node") {
     std::mt19937_64 random{67};
     const IntervalInstance instance = random_interval_instance(random, 30);
     const pbqp::Statistics stats    = pbqp::solve(instance.graph, instance.peo_position).statistics;
@@ -412,7 +418,7 @@ void statistics_count_every_node() {
     CHECK(path_stats.r0 + path_stats.r1 + path_stats.r2 == 5);
 }
 
-void infeasible_instances_are_reported() {
+TEST_CASE("infeasible instances are reported") {
     pbqp::Graph graph;
     for (int i = 0; i < 3; ++i)
         graph.add({0, 0});
@@ -425,10 +431,12 @@ void infeasible_instances_are_reported() {
     CHECK(solution.conflicts == pbqp::conflicts(graph, solution.choices));
 
     const auto optimal = pbqp::solve_exhaustive(graph);
-    CHECK(optimal && !optimal->feasible() && optimal->conflicts.count() >= 2);
+    REQUIRE(optimal.has_value());
+    CHECK(!optimal->feasible());
+    CHECK(optimal->conflicts.count() >= 2);
 }
 
-void conflicts_name_the_forbidden_nodes() {
+TEST_CASE("conflicts name the forbidden nodes") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({0, 0});
     const pbqp::NodeId b = graph.add({0, pbqp::kInfinity});
@@ -444,7 +452,7 @@ void conflicts_name_the_forbidden_nodes() {
     CHECK(pbqp::solve(graph).conflicts.count() == 0);
 }
 
-void add_edge_costs_accumulates_in_either_direction() {
+TEST_CASE("add_edge_costs accumulates in either direction") {
     pbqp::Graph graph;
     const pbqp::NodeId m = graph.add({0, 0});
     const pbqp::NodeId n = graph.add({0, 0, 0});
@@ -464,7 +472,7 @@ void add_edge_costs_accumulates_in_either_direction() {
     CHECK(graph.edge_cost(e, 1, 2) == pbqp::kInfinity);
 }
 
-void rm_merges_implied_neighbour() {
+TEST_CASE("rm merges implied neighbour") {
     // Figure 2 of Buchwald et al. 2011: coloring U implies V, and merging V into U leaves only exact reductions.
     constexpr auto inf = pbqp::kInfinity;
     pbqp::Graph graph;
@@ -492,14 +500,14 @@ void rm_merges_implied_neighbour() {
     CHECK(solution.cost == pbqp::solve_exhaustive(graph)->cost);
 }
 
-void evaluate_prices_an_assignment() {
+TEST_CASE("evaluate prices an assignment") {
     pbqp::Graph graph;
     static_cast<void>(graph.add({1, 2}));
 
     CHECK(pbqp::evaluate(graph, pbqp::Choices{1}) == 2);
 }
 
-void exhaustive_refuses_large_instances() {
+TEST_CASE("exhaustive refuses large instances") {
     pbqp::Graph graph;
     for (int i = 0; i < 4; ++i)
         graph.add({0, 1, 2});
@@ -507,7 +515,7 @@ void exhaustive_refuses_large_instances() {
     CHECK(pbqp::solve_exhaustive(graph, 81).has_value());
 }
 
-void find_edge_works_in_both_directions() {
+TEST_CASE("find edge works in both directions") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({1, 2});
     const pbqp::NodeId b = graph.add({1, 2});
@@ -517,7 +525,7 @@ void find_edge_works_in_both_directions() {
     CHECK(graph.edge(b, a) != pbqp::Graph::npos);
 }
 
-void accessors_and_setters_round_trip() {
+TEST_CASE("accessors and setters round trip") {
     pbqp::Graph graph;
     const pbqp::NodeId m = graph.add({1, 2});
     const pbqp::NodeId n = graph.add({3, 4, 5});
@@ -535,7 +543,7 @@ void accessors_and_setters_round_trip() {
     CHECK(graph.edge_cost(e, 1, 2) == 1);
 }
 
-void equal_matrices_are_shared() {
+TEST_CASE("equal matrices are shared") {
     pbqp::Graph graph;
     fe::Vector<pbqp::NodeId> nodes;
     for (int i = 0; i < 4; ++i)
@@ -567,7 +575,7 @@ void equal_matrices_are_shared() {
     CHECK(pbqp::solve(graph).cost == 0);
 }
 
-void shared_matrices_survive_random_mutations() {
+TEST_CASE("shared matrices survive random mutations") {
     std::mt19937_64 random{42};
     std::uniform_int_distribution<int> pick{0, 3};
     const std::array<pbqp::Costs, 4> palette = {
@@ -627,7 +635,7 @@ void shared_matrices_survive_random_mutations() {
     CHECK(graph.num_matrices() == distinct.size());
 }
 
-void removal_keeps_ids_stable() {
+TEST_CASE("removal keeps ids stable") {
     pbqp::Graph graph;
     for (int i = 0; i < 4; ++i)
         graph.add({1, 2});
@@ -650,7 +658,7 @@ void removal_keeps_ids_stable() {
     CHECK(solution.cost == 3);
 }
 
-void parallel_exhaustive_matches_sequential() {
+TEST_CASE("parallel exhaustive matches sequential") {
     std::mt19937_64 random{29};
     std::uniform_int_distribution<int> cost{0, 10};
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
@@ -677,12 +685,13 @@ void parallel_exhaustive_matches_sequential() {
     CHECK(sequential.cost == parallel.cost);
 }
 
-void wide_option_vectors_stay_exact() {
+TEST_CASE("wide option vectors stay exact") {
     std::mt19937_64 random{41};
     std::uniform_int_distribution<int> cost{0, 100};
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
 
     for (const auto options : {size_t{17}, size_t{33}}) {
+        CAPTURE(options);
         fe::Vector<pbqp::Cost, 4> values(options);
         fe::Vector<pbqp::Cost, 4> matrix(options * options);
 
@@ -711,7 +720,7 @@ void wide_option_vectors_stay_exact() {
     }
 }
 
-void concurrent_solves_share_a_graph() {
+TEST_CASE("concurrent solves share a graph") {
     std::mt19937_64 random{31};
     std::uniform_int_distribution<int> cost{0, 10};
     const auto next_cost = [&] { return static_cast<pbqp::Cost>(cost(random)); };
@@ -755,7 +764,7 @@ void concurrent_solves_share_a_graph() {
     }
 }
 
-void dot_shows_costs_and_choices() {
+TEST_CASE("dot shows costs and choices") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({3, 4});
     const pbqp::NodeId b = graph.add({7});
@@ -789,7 +798,7 @@ std::string write_json(const pbqp::Graph& graph, fe::View<size_t> rn_priority = 
     return out.str();
 }
 
-void json_round_trips_ids_infinity_and_priorities() {
+TEST_CASE("json round trips ids infinity and priorities") {
     pbqp::Graph graph;
     const pbqp::NodeId a = graph.add({-3, pbqp::kInfinity});
     graph.remove(graph.add({0}));
@@ -806,14 +815,16 @@ void json_round_trips_ids_infinity_and_priorities() {
     CHECK(std::ranges::equal(instance.graph.node_costs(a), graph.node_costs(a)));
     CHECK(std::ranges::equal(instance.graph.node_costs(c), graph.node_costs(c)));
     const pbqp::EdgeId e = instance.graph.edge(a, c);
-    CHECK(e != pbqp::Graph::npos && instance.graph.edge(e).src == c);
+    REQUIRE(e != pbqp::Graph::npos);
+    CHECK(instance.graph.edge(e).src == c);
     CHECK(std::ranges::equal(instance.graph.edge_costs(e), graph.edge_costs(graph.edge(a, c))));
-    CHECK(instance.rn_priority.size() == 3 && instance.rn_priority[c] > instance.rn_priority[a]);
+    REQUIRE(instance.rn_priority.size() == 3);
+    CHECK(instance.rn_priority[c] > instance.rn_priority[a]);
     CHECK(write_json(instance.graph, instance.rn_priority) == text);
     CHECK(read_json(write_json(graph)).rn_priority.empty());
 }
 
-void json_reads_pbqp_papa_version_1() {
+TEST_CASE("json reads pbqp-papa version 1") {
     const pbqp::Instance instance = read_json(R"({
         "edges": [{"columns": 2, "cost": ["\u221e", "0", "0", "INF"], "rows": 2, "source": 7, "target": 4}],
         "meta": {"edgeCount": 1, "nodeCount": 2, "type": "INF unsigned int", "version": 1},
@@ -822,16 +833,20 @@ void json_reads_pbqp_papa_version_1() {
         "peo": [7, 4]
     })");
     const pbqp::Graph& graph      = instance.graph;
-    CHECK(graph.num_nodes() == 2 && graph.has_node(4) && graph.has_node(7));
+    CHECK(graph.num_nodes() == 2);
+    CHECK(graph.has_node(4));
+    CHECK(graph.has_node(7));
     CHECK(std::ranges::equal(graph.node_costs(4), std::array<pbqp::Cost, 2>{0, pbqp::kInfinity}));
     const pbqp::EdgeId e = graph.edge(4, 7);
-    CHECK(e != pbqp::Graph::npos && graph.edge(e).src == 7);
+    REQUIRE(e != pbqp::Graph::npos);
+    CHECK(graph.edge(e).src == 7);
     CHECK(std::ranges::equal(graph.edge_costs(e), std::array<pbqp::Cost, 4>{pbqp::kInfinity, 0, 0, pbqp::kInfinity}));
-    CHECK(instance.rn_priority.size() == 8 && instance.rn_priority[7] > instance.rn_priority[4]);
+    REQUIRE(instance.rn_priority.size() == 8);
+    CHECK(instance.rn_priority[7] > instance.rn_priority[4]);
     CHECK(pbqp::solve(graph, instance.rn_priority).cost == 2);
 }
 
-void json_reports_malformed_input() {
+TEST_CASE("json reports malformed input") {
     const auto error = [](std::string_view text) -> std::string {
         try {
             (void)read_json(text);
@@ -839,28 +854,29 @@ void json_reports_malformed_input() {
         return {};
     };
     const auto rejects = [&](std::string_view text, std::string_view message) {
-        return error(text).find(message) != std::string::npos;
+        CAPTURE(text);
+        CAPTURE(message);
+        CHECK(error(text).find(message) != std::string::npos);
     };
 
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [1]}]} #)", "invalid input character"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [1, 2.5]}]})", "expected cost, got"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": ["1)", "unterminated string"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [2147483647]}]})", "out of range"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": []}]})", "no options"));
-    CHECK(rejects(R"({"nodes": [{"cost": [0]}]})", "node without"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [true, 2147483648]}]})", "2 error(s)"));
-    CHECK(rejects(R"({"nodes": [{"index": 1, "cost": [0]}, {"index": 1, "cost": [0]}]})", "duplicate node 1"));
-    CHECK(rejects(R"({"meta": {"version": 3}, "nodes": []})", "unsupported version 3"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}], "edges": [{"source": 0, "target": 1, "cost": [0]}]})",
-                  "unknown node 1"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0, 0]}],
+    rejects(R"({"nodes": [{"index": 0, "cost": [1]}]} #)", "invalid input character");
+    rejects(R"({"nodes": [{"index": 0, "cost": [1, 2.5]}]})", "expected cost, got");
+    rejects(R"json({"nodes": [{"index": 0, "cost": ["1]})json", "unterminated string");
+    rejects(R"({"nodes": [{"index": 0, "cost": [2147483647]}]})", "out of range");
+    rejects(R"({"nodes": [{"index": 0, "cost": []}]})", "no options");
+    rejects(R"({"nodes": [{"cost": [0]}]})", "node without");
+    rejects(R"({"nodes": [{"index": 0, "cost": [true, 2147483648]}]})", "2 error(s)");
+    rejects(R"({"nodes": [{"index": 1, "cost": [0]}, {"index": 1, "cost": [0]}]})", "duplicate node 1");
+    rejects(R"({"meta": {"version": 3}, "nodes": []})", "unsupported version 3");
+    rejects(R"({"nodes": [{"index": 0, "cost": [0]}], "edges": [{"source": 0, "target": 1, "cost": [0]}]})",
+            "unknown node 1");
+    rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0, 0]}],
                       "edges": [{"source": 0, "target": 1, "cost": [0]}]})",
-                  "expected 1 × 2 costs, got 1"));
-    CHECK(rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0]}], "peo": [0, 1, 0]})",
-                  "occurs twice"));
+            "expected 1 × 2 costs, got 1");
+    rejects(R"({"nodes": [{"index": 0, "cost": [0]}, {"index": 1, "cost": [0]}], "peo": [0, 1, 0]})", "occurs twice");
 }
 
-void pbqp_papa_instances_are_solved_optimally() {
+TEST_CASE("pbqp-papa instances are solved optimally") {
     struct Case {
         const char* file;
         size_t nodes;
@@ -871,13 +887,13 @@ void pbqp_papa_instances_are_solved_optimally() {
              Case{ "smallLibfirmGraph.json", 42, 31},
              Case{       "problematic.json", 45, 69},
     }) {
+        CAPTURE(file);
         std::ifstream in{std::string(PBQP_TEST_DATA) + "/" + file};
         pbqp::Instance instance;
         try {
             instance = pbqp::read_json(in, file);
         } catch (const std::exception& error) {
-            std::cerr << error.what();
-            CHECK(false);
+            FAIL_CHECK(error.what());
             continue;
         }
         const pbqp::Graph& graph = instance.graph;
@@ -897,50 +913,3 @@ void pbqp_papa_instances_are_solved_optimally() {
 }
 
 } // namespace
-
-int main() {
-    single_node_picks_cheapest_option();
-    independent_nodes_are_independent();
-    edge_choice_trades_off_node_costs();
-    triangle_with_conflicting_colours();
-    heuristic_is_optimal_on_random_trees(0, 10, 0);
-    heuristic_is_optimal_on_random_trees(-1000, 1000, 0);
-    heuristic_is_optimal_on_random_trees(-1000, 1000, 20);
-    heuristic_is_optimal_on_random_trees(-1'000'000, 1'000'000, 20);
-    long_path_with_large_costs_stays_exact();
-    rn_charges_its_edges_to_the_neighbours();
-    heuristic_result_is_always_valid();
-    negative_costs_reward_coalescing();
-    infinity_forbids_same_option();
-    infinite_sums_do_not_wrap();
-    pruning_makes_dense_graphs_exact();
-    heuristic_handles_forbidden_options_on_dense_graphs();
-    peo_priority_always_colors_chordal_graphs();
-    statistics_count_every_node();
-    infeasible_instances_are_reported();
-    conflicts_name_the_forbidden_nodes();
-    add_edge_costs_accumulates_in_either_direction();
-    rm_merges_implied_neighbour();
-    evaluate_prices_an_assignment();
-    exhaustive_refuses_large_instances();
-    find_edge_works_in_both_directions();
-    accessors_and_setters_round_trip();
-    equal_matrices_are_shared();
-    shared_matrices_survive_random_mutations();
-    removal_keeps_ids_stable();
-    parallel_exhaustive_matches_sequential();
-    wide_option_vectors_stay_exact();
-    concurrent_solves_share_a_graph();
-    dot_shows_costs_and_choices();
-    json_round_trips_ids_infinity_and_priorities();
-    json_reads_pbqp_papa_version_1();
-    json_reports_malformed_input();
-    pbqp_papa_instances_are_solved_optimally();
-
-    if (failures != 0) {
-        std::cerr << failures << " check(s) failed\n";
-        return 1;
-    }
-    std::cout << "all checks passed\n";
-    return 0;
-}
