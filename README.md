@@ -100,7 +100,7 @@ copy, so independent instances can be solved in parallel too.
 
 ## What the solver does
 
-Nodes are reduced one at a time (lowest degree first) and the choices are
+Nodes are reduced one at a time (exact reductions first) and the choices are
 reconstructed in reverse order:
 
 | Degree | Reduction | Exact? |
@@ -113,8 +113,8 @@ reconstructed in reverse order:
 | 3+, before RN | RM: merge a neighbour whose option is implied, then R1 it | yes |
 
 Because RI/RII are exact, the heuristic is optimal on trees. On graphs with
-cycles a local heuristic (`rn_score`, the cost spread per incident edge) decides
-which node is reduced with RN. Degree-bucketed worklists keep node selection
+cycles RN takes the node with the highest degree first and breaks ties with
+`rn_score`, the cost spread per incident edge. Worklists keep node selection
 cheap, so reduction scales roughly linearly with the graph size.
 
 Before and during reduction the solver normalizes its working copy: matrix
@@ -133,7 +133,7 @@ the highest priority is decided first. For SSA-based register allocation pass
 each node's position in a perfect elimination order of the interference graph;
 the exact reductions keep that order valid, so coloring cannot fail
 (Buchwald, Zwinkau, Bersch: *SSA-based Register Allocation with PBQP*, CC 2011).
-Without priorities RN falls back to degree and cost spread.
+Without priorities RN falls back to the highest degree and cost spread.
 `Solution::feasible()` reports whether the assignment avoids every `kInfinity`
 entry, and `Solution::statistics` counts each kind of reduction.
 

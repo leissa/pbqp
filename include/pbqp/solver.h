@@ -52,9 +52,9 @@ struct Solution {
 /// Reduces degree 0, 1 (RI) and 2 (RII) nodes exactly and higher-degree nodes with the RN heuristic.
 /// Normalization keeps intermediate costs relative, so they saturate only where option costs differ by kInfinity.
 /// Short of that, the result is optimal whenever no RN step is needed, e.g. on trees.
-/// RN decides the node with the highest `rn_priority[n]` first; degree and cost spread only break ties.
-/// SSA-based register allocation passes PEO positions, so coloring cannot fail (Buchwald et al. 2011).
-/// Requires `rn_priority` to be empty or to cover every node id.
+/// RN decides the node with the highest `rn_priority[n]` first; ties go to the highest degree, then the widest cost
+/// spread. SSA-based register allocation passes PEO positions, so coloring cannot fail (Buchwald et al. 2011). Requires
+/// `rn_priority` to be empty or to cover every node id.
 [[nodiscard]] Solution solve(const Graph& graph, fe::View<size_t> rn_priority = {});
 
 /// Brute-force optimum, useful to cross-check small instances.

@@ -135,8 +135,12 @@ int main(int argc, char** argv) {
         else
             std::println("instance : {} nodes, {} edges from {}", graph.num_nodes(), graph.num_edges(), settings.in);
 
+        const auto cost = [](const pbqp::Solution& solution) {
+            return solution.feasible() ? std::format("cost {}", solution.cost) : std::string("infeasible");
+        };
+
         const pbqp::Solution heuristic = pbqp::solve(graph, instance.rn_priority);
-        std::println("heuristic: cost {}", heuristic.cost);
+        std::println("heuristic: {}", cost(heuristic));
         const pbqp::Statistics& stats = heuristic.statistics;
         std::println(
             "reduced  : R0 {}, R1 {}, R2 {}, RN {}, RM {}, single-option {}; {} forbidden options, {} dropped edges",
@@ -144,14 +148,17 @@ int main(int argc, char** argv) {
             stats.dropped_edges);
 
         if (const auto optimal = pbqp::solve_exhaustive(graph, 2'000'000)) {
-            std::print("brute    : cost {}", optimal->cost);
-            if (heuristic.cost == optimal->cost) {
+            std::print("brute    : {}", cost(*optimal));
+            if (heuristic.cost == optimal->cost)
                 std::println("  (heuristic matches the optimum)");
-            } else {
-                const auto gap       = static_cast<double>(heuristic.cost - optimal->cost);
-                const double percent = 100.0 * gap / static_cast<double>(std::max<pbqp::CostSum>(optimal->cost, 1));
-                std::println("  (heuristic is {:.1f}% above the optimum)", percent);
-            }
+            else if (!heuristic.feasible())
+                std::println("  (heuristic missed a feasible assignment)");
+            else if (optimal->cost > 0)
+                std::println("  (heuristic is {:.1f}% above the optimum)",
+                             100.0 * static_cast<double>(heuristic.cost - optimal->cost)
+                                 / static_cast<double>(optimal->cost));
+            else
+                std::println("  (heuristic is {} above the optimum)", heuristic.cost - optimal->cost);
         } else {
             std::println("brute    : skipped, instance too large for brute force");
         }

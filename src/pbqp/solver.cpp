@@ -5,7 +5,6 @@
 #include <cstdint>
 
 #include <algorithm>
-#include <functional>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -95,7 +94,7 @@ struct Substitution {
     const Link* links           = nullptr;
 };
 
-/// Normalized working copy of a Graph with degree-bucketed worklists.
+/// Normalized working copy of a Graph with worklists for exact and RN reductions.
 class Reducer {
 public:
     Reducer(const Graph& graph, fe::View<size_t> rn_priority)
@@ -126,7 +125,7 @@ public:
     [[nodiscard]] size_t slots() const { return nodes_.size(); }
     [[nodiscard]] const Statistics& statistics() const { return statistics_; }
 
-    /// Exact reductions first; RN candidates are ordered by priority, degree, then rn_score.
+    /// Exact reductions first; RN takes the highest priority, then degree, then rn_score.
     NodeId next() {
         while (!dirty_.empty()) {
             const NodeId n = dirty_.back();
@@ -228,11 +227,11 @@ private:
     };
 
     struct Candidate {
-        size_t urgency = 0; // inverted priority, so that the min-heap pops the highest priority first
-        size_t degree  = 0;
-        double score   = 0.0;
-        NodeId node    = 0;
-        size_t version = 0;
+        size_t priority = 0;
+        size_t degree   = 0;
+        double score    = 0.0;
+        NodeId node     = 0;
+        size_t version  = 0;
 
         auto operator<=>(const Candidate&) const = default;
     };
@@ -253,7 +252,7 @@ private:
         return edges_[e].owned;
     }
 
-    /// Briggs-style RN heuristic: small values mean "cheap to decide late".
+    /// Cost spread per incident edge: what a wrong RN decision is likely to cost.
     [[nodiscard]] double rn_score(NodeId n) const {
         const auto [low, high] = std::ranges::minmax(nodes_[n].costs);
         return static_cast<double>(high - low) / static_cast<double>(std::max<size_t>(1, degree(n)));
@@ -269,12 +268,11 @@ private:
             if (!node.low) low_.emplace_back(n);
             node.low = true;
         } else {
-            const size_t priority = rn_priority_.empty() ? 0 : rn_priority_[n];
-            high_.push(Candidate{.urgency = ~priority,
-                                 .degree  = degree(n),
-                                 .score   = rn_score(n),
-                                 .node    = n,
-                                 .version = node.version});
+            high_.push(Candidate{.priority = rn_priority_.empty() ? 0 : rn_priority_[n],
+                                 .degree   = degree(n),
+                                 .score    = rn_score(n),
+                                 .node     = n,
+                                 .version  = node.version});
         }
     }
 
@@ -607,7 +605,7 @@ private:
     fe::Vector<NodeId> dirty_;
     fe::View<size_t> rn_priority_;
     Statistics statistics_;
-    std::priority_queue<Candidate, fe::Vector<Candidate>, std::greater<>> high_;
+    std::priority_queue<Candidate, fe::Vector<Candidate>> high_;
 };
 
 } // namespace
