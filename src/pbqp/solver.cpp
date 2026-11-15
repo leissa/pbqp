@@ -35,8 +35,6 @@
 namespace pbqp {
 namespace {
 
-using Vector = Costs;
-
 CostSum widen(Cost cost) { return cost == kInfinity ? kInfiniteSum : cost; }
 
 CostSum add_sums(CostSum lhs, CostSum rhs) {
@@ -102,11 +100,8 @@ class Reducer {
 public:
     Reducer(const Graph& graph, fe::View<size_t> rn_priority)
         : rn_priority_(rn_priority) {
-        for (const auto n : graph.nodes())
-            nodes_.resize(std::max(nodes_.size(), n + 1));
-        assert((rn_priority.empty() || rn_priority.size() >= nodes_.size())
-               && "solve: rn_priority does not cover every node");
         for (const auto n : graph.nodes()) {
+            nodes_.resize(n + 1);
             const auto costs = graph.node_costs(n);
             nodes_[n].costs.assign(costs.begin(), costs.end());
             nodes_[n].original.resize(costs.size());
@@ -114,6 +109,8 @@ public:
             std::ranges::iota(nodes_[n].original, OptionIndex{0});
             nodes_[n].alive = true;
         }
+        assert((rn_priority.empty() || rn_priority.size() >= nodes_.size())
+               && "solve: rn_priority does not cover every node");
         for (const auto e : graph.edges()) {
             const auto [src, dst] = graph.edge(e);
             link(src, dst, graph.edge_costs(e).data(), nullptr);
@@ -197,10 +194,7 @@ public:
                 const Link& link         = substitution.links[l];
                 const OptionIndex chosen = choices[link.neighbour];
                 const OptionIndex y      = link.neighbour_working ? link.neighbour_working[chosen] : chosen;
-                if (y == Graph::npos) {
-                    total = kInfiniteSum;
-                    break;
-                }
+                assert(y != Graph::npos && "choose: a neighbour picked an option it had already lost");
                 const Cost* const matrix = data(link.edge);
                 total = add_sums(total,
                                  widen(link.is_src ? matrix[x * link.neighbour_options + y] : matrix[y * own + x]));
@@ -215,7 +209,7 @@ public:
 
 private:
     struct Node {
-        Vector costs;
+        Costs costs;
         fe::Vector<OptionIndex, 4> original;  // original[working option]
         const OptionIndex* working = nullptr; // inverse of original once an option was deleted, built on demand
         Edges edges;
@@ -285,7 +279,7 @@ private:
     }
 
     void normalize_node(NodeId n) {
-        Vector& costs      = nodes_[n].costs;
+        Costs& costs       = nodes_[n].costs;
         const Cost minimum = std::ranges::min(costs);
         if (minimum == 0 || minimum == kInfinity) return;
         for (auto& cost : costs)
@@ -294,11 +288,12 @@ private:
 
     /// Moves row and column minima into the node vectors and drops the edge if nothing is left.
     void normalize_edge(EdgeId e) {
-        const auto [src, dst] = std::pair{edges_[e].src, edges_[e].dst};
-        Vector& src_costs     = nodes_[src].costs;
-        Vector& dst_costs     = nodes_[dst].costs;
-        const size_t rows     = src_costs.size();
-        const size_t cols     = dst_costs.size();
+        const NodeId src  = edges_[e].src;
+        const NodeId dst  = edges_[e].dst;
+        Costs& src_costs  = nodes_[src].costs;
+        Costs& dst_costs  = nodes_[dst].costs;
+        const size_t rows = src_costs.size();
+        const size_t cols = dst_costs.size();
 
         for (size_t r = 0; r < rows; ++r) {
             const Cost* const row = data(e) + r * cols;
@@ -421,16 +416,15 @@ private:
     }
 
     void remove_node(NodeId n) {
-        Node& node = nodes_[n];
-        for (const auto e : node.edges) {
-            const NodeId other = edges_[e].src == n ? edges_[e].dst : edges_[e].src;
-            erase(nodes_[other].edges, e);
-        }
+        Node& node           = nodes_[n];
         const Edges incident = std::move(node.edges);
         node.edges.clear();
         node.alive = false;
-        for (const auto e : incident)
-            touch(edges_[e].src == n ? edges_[e].dst : edges_[e].src);
+        for (const auto e : incident) {
+            const NodeId other = other_end(e, n);
+            erase(nodes_[other].edges, e);
+            touch(other);
+        }
     }
 
     /// Views edges stored as (from, other) and transposes the others into the scratch arena.
@@ -520,7 +514,7 @@ private:
     /// The option of `m` that each option of `n` forces, or null if some option of `n` leaves `m` a choice.
     [[nodiscard]] const OptionIndex* implied_options(EdgeId e, NodeId n) {
         const TrimmedEdge edge     = trim_edge(e, n);
-        const Vector& m_costs      = nodes_[edge.neighbour].costs;
+        const Costs& m_costs       = nodes_[edge.neighbour].costs;
         OptionIndex* const implied = scratch_.allocate<OptionIndex>(options(n));
         std::fill_n(implied, options(n), Graph::npos);
         for (OptionIndex i = 0; i < options(n); ++i) {
@@ -586,8 +580,8 @@ private:
         for (OptionIndex x = 0; x < reduction.costs.size(); ++x) {
             CostSum total = widen(reduction.costs[x]);
             for (const auto& edge : reduction.edges) {
-                const Vector& neighbour_costs = nodes_[edge.neighbour].costs;
-                CostSum cheapest              = kInfiniteSum;
+                const Costs& neighbour_costs = nodes_[edge.neighbour].costs;
+                CostSum cheapest             = kInfiniteSum;
                 for (size_t y = 0; y < edge.neighbour_options; ++y)
                     cheapest = std::min(cheapest, add_sums(widen(neighbour_costs[y]),
                                                            widen(edge.matrix[x * edge.neighbour_options + y])));
@@ -711,26 +705,18 @@ std::optional<Enumeration> make_enumeration(const Graph& graph, size_t max_combi
     return enumeration;
 }
 
-struct BestAssignment {
-    Solution solution;
-    size_t index = 0;
-};
-
 /// The smallest index wins ties so that the result does not depend on the partitioning.
-BestAssignment search_range(const Graph& graph, const Enumeration& enumeration, size_t begin, size_t end) {
+Solution search_range(const Graph& graph, const Enumeration& enumeration, size_t begin, size_t end) {
     Choices choices(enumeration.slots, 0);
     for (size_t i = 0; i < enumeration.nodes.size(); ++i)
         choices[enumeration.nodes[i]] = (begin / enumeration.place[i]) % enumeration.options[i];
 
-    BestAssignment best{
-        .solution = Solution{.choices = choices, .cost = kInfiniteSum, .conflicts = {}, .statistics = {}},
-        .index    = end
-    };
+    Solution best{.choices = choices, .cost = kInfiniteSum, .conflicts = {}, .statistics = {}};
     for (size_t index = begin; index < end; ++index) {
         const CostSum cost = evaluate(graph, choices);
-        if (cost < best.solution.cost) {
-            best.solution = Solution{.choices = choices, .cost = cost, .conflicts = {}, .statistics = {}};
-            best.index    = index;
+        if (cost < best.cost) {
+            best.choices = choices;
+            best.cost    = cost;
         }
         for (size_t i = 0; i < enumeration.nodes.size(); ++i) {
             if (++choices[enumeration.nodes[i]] < enumeration.options[i]) break;
@@ -753,9 +739,9 @@ std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinat
     if (requested == 0) requested = 1;
     const size_t workers = std::min<size_t>(requested, enumeration.combinations);
 
-    if (workers <= 1) return finish(graph, search_range(graph, enumeration, 0, enumeration.combinations).solution);
+    if (workers <= 1) return finish(graph, search_range(graph, enumeration, 0, enumeration.combinations));
 
-    fe::Vector<BestAssignment> partials(workers);
+    fe::Vector<Solution> partials(workers);
     {
         fe::Vector<std::jthread> threads;
         threads.reserve(workers);
@@ -772,14 +758,8 @@ std::optional<Solution> solve_exhaustive(const Graph& graph, size_t max_combinat
         }
     }
 
-    BestAssignment best = partials[0];
-    for (size_t i = 1; i < workers; ++i) {
-        const BestAssignment& candidate = partials[i];
-        if (candidate.solution.cost < best.solution.cost
-            || (candidate.solution.cost == best.solution.cost && candidate.index < best.index))
-            best = candidate;
-    }
-    return finish(graph, std::move(best.solution));
+    // Ranges ascend, so the first minimum is the one with the smallest index.
+    return finish(graph, std::move(*std::ranges::min_element(partials, {}, &Solution::cost)));
 }
 
 } // namespace pbqp

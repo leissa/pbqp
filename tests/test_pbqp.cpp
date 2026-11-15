@@ -860,8 +860,6 @@ void json_reports_malformed_input() {
                   "occurs twice"));
 }
 
-} // namespace
-
 void pbqp_papa_instances_are_solved_optimally() {
     struct Case {
         const char* file;
@@ -897,6 +895,8 @@ void pbqp_papa_instances_are_solved_optimally() {
         CHECK(write_json(back.graph, back.rn_priority) == text);
     }
 }
+
+} // namespace
 
 int main() {
     single_node_picks_cheapest_option();

@@ -11,7 +11,7 @@
 namespace pbqp {
 
 NodeId Graph::add(fe::View<Cost> costs) {
-    assert((!costs.empty()) && "add_node: a PBQP node needs at least one option");
+    assert((!costs.empty()) && "add: a PBQP node needs at least one option");
     nodes_.emplace_back(Node{
         .costs = {costs.begin(), costs.end()},
         .edges = {}
@@ -54,7 +54,7 @@ EdgeId Graph::add_edge_costs(NodeId m, NodeId n, fe::View<Cost> costs) {
 }
 
 void Graph::unlink(EdgeId e) {
-    assert((has_edge(e)) && "remove_edge: unknown edge");
+    assert((has_edge(e)) && "unlink: unknown edge");
 
     Edge& removed = edges_[e];
     edge_mask_.clear(e);
@@ -67,7 +67,7 @@ void Graph::unlink(EdgeId e) {
 }
 
 void Graph::remove(NodeId n) {
-    assert((has_node(n)) && "remove_node: unknown node");
+    assert((has_node(n)) && "remove: unknown node");
 
     const Edges incident = nodes_[n].edges;
     for (const auto e : incident)
@@ -118,7 +118,7 @@ Cost Graph::edge_cost(EdgeId e, OptionIndex src_option, OptionIndex dst_option) 
 }
 
 EdgeId Graph::edge(NodeId m, NodeId n) const {
-    assert((has_node(m) && has_node(n)) && "find_edge: unknown node");
+    assert((has_node(m) && has_node(n)) && "edge: unknown node");
     if (nodes_[n].edges.size() < nodes_[m].edges.size()) std::swap(m, n);
     for (const auto e : nodes_[m].edges) {
         const Edge& candidate = edges_[e];

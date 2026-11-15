@@ -7,7 +7,7 @@
 [![macOS](https://img.shields.io/github/actions/workflow/status/leissa/pbqp/macos.yml?style=flat-square&logo=apple&label=macOS&branch=master)](https://github.com/leissa/pbqp/actions/workflows/macos.yml?query=branch%3Amaster)
 [![Windows](https://img.shields.io/github/actions/workflow/status/leissa/pbqp/windows.yml?style=flat-square&label=⊞%20Windows&branch=master)](https://github.com/leissa/pbqp/actions/workflows/windows.yml?query=branch%3Amaster)
 
-A small, dependency-free starting point for a [PBQP](https://en.wikipedia.org/wiki/Partitioned_Boolean_Quadratic_Programming)
+A small starting point for a [PBQP](https://en.wikipedia.org/wiki/Partitioned_Boolean_Quadratic_Programming)
 (Partitioned Boolean Quadratic Programming) solver in C++23.
 
 PBQP is the optimisation problem behind, among other things, graph-colouring
@@ -30,9 +30,11 @@ CMakePresets.json           debug / release / asan / tsan presets
 include/pbqp/graph.h        problem graph (cost vectors and matrices)
 include/pbqp/solver.h       solver interface
 include/pbqp/dot.h          Graphviz DOT export
+include/pbqp/json.h         pbqp-papa JSON import/export
 src/pbqp/graph.cpp          graph storage, validation
 src/pbqp/solver.cpp         reduction-based heuristic
 src/pbqp/dot.cpp            DOT writer
+src/pbqp/json.cpp           JSON reader and writer
 apps/pbqp_demo.cpp          random instance generator and CLI
 tests/test_pbqp.cpp         test binary (CTest)
 submodules/fe               git submodule (FE), which vendors svector, unordered_dense and doctest
@@ -86,7 +88,8 @@ Costs are `pbqp::Cost` (`std::int32_t`) and totals are `pbqp::CostSum`
 assignment that uses one costs `pbqp::kInfiniteSum`. Negative entries are
 ordinary rewards (register-allocation affinity edges).
 
-`solve` returns a feasible assignment plus its cost under the original graph.
+`solve` returns a complete assignment plus its cost under the original graph;
+if it is infeasible, `Solution::conflicts` names the nodes that hit a `kInfinity` entry.
 `solve_exhaustive` computes the true optimum for tiny instances, splitting the
 search space across `num_threads` threads (0 = hardware concurrency).
 `evaluate` prices any assignment you already have.
@@ -151,9 +154,8 @@ AVX2 variants that are picked at runtime.
   degree cap or as an opt-in.
 - Better RN ordering (Briggs et al.), R0/R1 lookahead, or a simple local-search
   improvement after back-substitution.
-- Merge parallel matrix edges internally (already handled) and add an
-  optimal-RII variant for small node option counts.
-- Import/export: DIMACS-like text format, or a DOT writer for debugging.
+- An optimal-RII variant for small node option counts.
+- Import/export: DIMACS-like text format.
 - An exact branch-and-bound/ILP solver behind the same `solve`-style interface.
 - Swap the plain `fe::Vector` storage for `std::mdspan` views if you want to
   plug in sparse or blocked matrices.
